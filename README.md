@@ -2,7 +2,7 @@
 CLI tool to managing your fastfetch configuration.
 
 # Credits
-This tool was made by 2 people. aaronYTDev coded the program, and Madrinth tested the program. Without one of us we wouldn't have a stable release right now.
+This tool was made by 2 people. aaronYTDev coded the program, and Madrinth tested the program. Without one of us we wouldn't have a stable release coming.
 
 # Everything else
 Read the fastfetch-config Wiki.
