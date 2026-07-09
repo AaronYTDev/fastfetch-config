@@ -102,7 +102,7 @@ install_scripts() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="V1.6.3"
+VERSION="V1.6.4"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/fastfetch"
 CONFIG_FILE="$CONFIG_DIR/config.jsonc"
 LOGOS_DIR="$CONFIG_DIR/logos"
