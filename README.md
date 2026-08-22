@@ -1,5 +1,5 @@
 # fastfetch-config
-TUI tool to manage your fastfetch configuration. Not confirmed to work on all operating systems. Works best on Arch Linux.
+TUI tool to manage your fastfetch configuration. Not confirmed to work on all operating systems. Works best on Arch Linux, or Arch Linux based distros, like CachyOS, EndeavourOS, etc.
 
 # Credits
 This tool was made by 2 people. aaronYTDev & Madrinth Without one of us we wouldn't have a stable release today.
