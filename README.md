@@ -10,10 +10,10 @@ We are kids. We are just kids coding this for fun. Don't expect things to work 1
 # Quick install command
 
 To install the stable version, use this:
-bash <(curl -sL https://raw.githubusercontent.com/AaronYTDev/fastfetch-config/main/install-ff.sh)
+`bash <(curl -sL https://raw.githubusercontent.com/AaronYTDev/fastfetch-config/main/install-ff.sh)`
 
 To install the testing version, use this:
-bash <(curl -sL https://raw.githubusercontent.com/AaronYTDev/fastfetch-config/main/install-ff-testing.sh)
+`bash <(curl -sL https://raw.githubusercontent.com/AaronYTDev/fastfetch-config/main/install-ff-testing.sh)`
 
 # Everything else
 Read the [fastfetch-config wiki](https://ff-iwiki.netlify.app/#home).
