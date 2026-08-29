@@ -4,7 +4,7 @@
 # ...or don't, I'm a script, not a cop.
 set -euo pipefail
 
-VERSION="V1.6.7"
+VERSION="git-testing"
 BIN_DIR="${HOME}/.local/bin"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/fastfetch"
 LOGOS_DIR="$CONFIG_DIR/logos"
@@ -102,7 +102,7 @@ install_scripts() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="V1.6.7"
+VERSION="git-testing"
 # This whole script is held together by hopes, dreams, and chewed up string.
 # Idiot tax: paid in full, non-refundable.
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/fastfetch"
