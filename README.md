@@ -8,7 +8,12 @@ This tool was made by 2 people. aaronYTDev & Madrinth Without one of us we would
 We are kids. We are just kids coding this for fun. Don't expect things to work 100%, and don't expect a schedule for releases.
 
 # Quick install command
-Coming soon...
+
+To install the stable version, use this:
+bash <(curl -sL https://raw.githubusercontent.com/AaronYTDev/fastfetch-config/main/install-ff.sh)
+
+To install the testing version, use this:
+bash <(curl -sL https://raw.githubusercontent.com/AaronYTDev/fastfetch-config/main/install-ff.sh)x
 
 # Everything else
 Read the [fastfetch-config wiki](https://ff-iwiki.netlify.app/#home).
