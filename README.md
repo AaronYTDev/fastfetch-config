@@ -13,7 +13,7 @@ To install the stable version, use this:
 bash <(curl -sL https://raw.githubusercontent.com/AaronYTDev/fastfetch-config/main/install-ff.sh)
 
 To install the testing version, use this:
-bash <(curl -sL https://raw.githubusercontent.com/AaronYTDev/fastfetch-config/main/install-ff.sh)x
+bash <(curl -sL https://raw.githubusercontent.com/AaronYTDev/fastfetch-config/main/install-ff-testing.sh)
 
 # Everything else
 Read the [fastfetch-config wiki](https://ff-iwiki.netlify.app/#home).
