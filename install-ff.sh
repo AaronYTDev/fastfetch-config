@@ -4,7 +4,7 @@
 # ...or don't, I'm a script, not a cop.
 set -euo pipefail
 
-VERSION="V1.6.7"
+VERSION="V1.6.8"
 BIN_DIR="${HOME}/.local/bin"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/fastfetch"
 LOGOS_DIR="$CONFIG_DIR/logos"
@@ -102,7 +102,7 @@ install_scripts() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="V1.6.7"
+VERSION="V1.6.8"
 # This whole script is held together by hopes, dreams, and chewed up string.
 # Idiot tax: paid in full, non-refundable.
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/fastfetch"
@@ -742,18 +742,48 @@ search_config() {
 
 # ── Self-update ──────────────────────────────────────────────
 self_update() {
-  local mode="${1:-}" allow_prerelease="${2:-}"
+  local mode="${1:-}" target="${2:-}"
+  local URL_BASE="https://raw.githubusercontent.com/AaronYTDev/fastfetch-config/main"
+  local STABLE_SCRIPT="$URL_BASE/install-ff.sh"
+  local TESTING_SCRIPT="$URL_BASE/install-ff-testing.sh"
+  local VERSION_FILE="$URL_BASE/autoupdate_latestversion"
+
+  do_install() {
+    local url="$1"
+    bash <(curl -sL "$url")
+  }
+
+  # "ff update testing" → always (re)install the testing build
+  if [ "$target" = "testing" ]; then
+    if [ "$mode" = "check" ]; then
+      echo "The testing build is always the newest and is installed with:"
+      echo "  bash <(curl -sL $TESTING_SCRIPT)"
+      return
+    fi
+    echo "Installing the latest testing build..."
+    do_install "$TESTING_SCRIPT"
+    return
+  fi
+
+  # Testing build + plain "ff update" → install the stable build
+  if [ "$VERSION" = "git-testing" ]; then
+    if [ "$mode" = "check" ]; then
+      echo "You're on the testing build, which is always the newest."
+      echo "Run 'ff update' to install the latest stable build."
+      return
+    fi
+    echo "Installing the latest stable build..."
+    do_install "$STABLE_SCRIPT"
+    return
+  fi
+
+  # Stable build → compare against the autoupdate_latestversion file
   echo "Checking for updates..."
-  local release_data
-  release_data=$(curl -sL --connect-timeout 5 --max-time 10 \
-    "https://api.github.com/repos/AaronYTDev/fastfetch-config/releases/latest" 2>/dev/null || true)
-  [ -z "$release_data" ] && { echo "Failed to reach GitHub. Check your internet connection."; return; }
-  local remote_version; remote_version=$(echo "$release_data" | jq -r '.tag_name' 2>/dev/null || true)
-  local release_name; release_name=$(echo "$release_data" | jq -r '.name' 2>/dev/null || true)
-  local display="${release_name:-$remote_version}"
-  [ -z "$remote_version" ] && { echo "Failed to parse release info from GitHub."; return; }
+  local remote_version
+  remote_version=$(curl -sL --connect-timeout 5 --max-time 10 "$VERSION_FILE" 2>/dev/null | tr -d '[:space:]' || true)
+  [ -z "$remote_version" ] && { echo "Failed to reach GitHub. Check your internet connection."; return; }
   echo "Current: $VERSION"
-  echo "Remote:  $display"
+  echo "Remote:  $remote_version"
 
   if ! version_lt "$VERSION" "$remote_version"; then
     if version_lt "$remote_version" "$VERSION"; then
@@ -764,50 +794,28 @@ self_update() {
     return
   fi
 
-  local is_prerelease;  is_prerelease=$(echo "$display" | grep -c '\-prerelease' || true)
-  local is_local_prerelease; is_local_prerelease=$(echo "$VERSION" | grep -c '\-prerelease' || true)
+  [ "$mode" = "check" ] && { echo "Update available ($remote_version)! Run 'ff update' to install."; return; }
 
-  if [ "$is_local_prerelease" -eq 0 ] && [ "$is_prerelease" -eq 1 ] && [ "$allow_prerelease" != "prerelease" ]; then
-    if [ "$mode" = "check" ]; then echo "Prerelease available ($display). Use 'ff update -prerelease' to install the prerelease build."
-    else echo "Skipping prerelease build. Use 'ff update -prerelease' to install prereleases."; fi
-    return
-  fi
-
-  [ "$mode" = "check" ] && { echo "Update available ($display)! Run 'ff update' to install."; return; }
-
-  local asset_url body
-  asset_url=$(echo "$release_data" | jq -r '.assets[] | select(.name == "install-ff.sh") | .browser_download_url' 2>/dev/null || true)
-  body=$(echo "$release_data" | jq -r '.body // "No changelog provided"' 2>/dev/null || true)
-  [ -z "$asset_url" ] && { echo "Could not find the installer in the latest release."; return; }
-  echo; echo "Changelog for $display:"
-  echo "$body" | head -30
-  echo; read -p "Press enter to continue..." _ </dev/tty 2>/dev/null || true
   read -p "Continue with update? (Y/n): " ans </dev/tty 2>/dev/null || ans="y"
   case "$ans" in n|N|no) echo "Update canceled."; return ;; esac
   echo; echo "Downloading update..."
-  local tmp; tmp=$(mktemp); CLEANUP_FILES+=("$tmp")
-  if curl -sL --connect-timeout 5 --max-time 60 -o "$tmp" "$asset_url"; then
-    chmod +x "$tmp"; echo "Running installer..."; bash "$tmp"
-  else
-    echo "Downloading the installer failed. Try again later."
-  fi
+  do_install "$STABLE_SCRIPT"
+  ok "fastfetch-config updated to $remote_version"
 }
 
 check_update_quiet() {
+  [ "$VERSION" = "git-testing" ] && return
   local cache_file="$BACKUP_DIR/.update_check" remote_version
   if [ -f "$cache_file" ]; then
     local age=$(( $(date +%s) - $(stat -c %Y "$cache_file") ))
     [ "$age" -lt 86400 ] && return
   fi
   remote_version=$(curl -sL --connect-timeout 3 --max-time 4 \
-    "https://api.github.com/repos/AaronYTDev/fastfetch-config/releases/latest" 2>/dev/null \
-    | jq -r '.tag_name' 2>/dev/null || true)
+    "https://raw.githubusercontent.com/AaronYTDev/fastfetch-config/main/autoupdate_latestversion" 2>/dev/null \
+    | tr -d '[:space:]' || true)
   [ -z "$remote_version" ] && { rm -f "$cache_file"; return; }
   echo "$remote_version" > "$cache_file"
   if version_lt "$VERSION" "$remote_version"; then
-    local is_prerelease; is_prerelease=$(echo "$remote_version" | grep -c '\-prerelease' || true)
-    local is_local_prerelease; is_local_prerelease=$(echo "$VERSION" | grep -c '\-prerelease' || true)
-    [ "$is_local_prerelease" -eq 0 ] && [ "$is_prerelease" -eq 1 ] && return
     echo "[update] Version $remote_version available! Run 'ff update' to install the latest build."
   fi
 }
@@ -992,7 +1000,7 @@ Other:
   diff [backup]         Show diff between current config and a backup
   search <term>         Search modules and colors
   doctor|check          Check for common setup issues
-  update [check]        Check for / install updates from GitHub
+  update [check] [testing]       Check for / install stable or testing updates
   version               Show version
    gallery|browse        Browse and preview built-in logos
    tui|interactive|menu   Open interactive TUI menu
@@ -1027,6 +1035,7 @@ Examples:
    ff clean [days]       Remove old backups
   fastfetch-config update
   fastfetch-config update check
+  fastfetch-config update testing
 EOF
 }
 
@@ -1500,11 +1509,11 @@ case "${1:-}" in
     echo "fastfetch-config $VERSION" ;;
   update)
     case "${2:-}" in
-      check) case "${3:-}" in -prerelease|--prerelease) self_update check prerelease ;; *) self_update check ;; esac ;;
-      -prerelease|--prerelease) self_update "" prerelease ;;
-      --help|-h|help) echo "Usage: ff update [check] [-prerelease]"; echo "  update              Download and install latest stable"; echo "  update check        Check for stable updates"; echo "  update -prerelease  Download and install latest (including prereleases)"; echo "  update check -prerelease  Check all updates including prereleases" ;;
+      check) self_update check ;;
+      testing|test) self_update "" testing ;;
+      --help|-h|help) echo "Usage: ff update [check] [testing]"; echo "  update              Download and install latest stable"; echo "  update testing      Download and install latest testing build"; echo "  update check        Check for updates without installing"; echo "On a testing build, 'ff update' switches back to the stable build." ;;
       "") self_update ;;
-      *) echo "Unknown option: ${2:-}"; echo "Usage: ff update [check] [-prerelease]" ;;
+      *) echo "Unknown option: ${2:-}"; echo "Usage: ff update [check] [testing]" ;;
     esac ;;
   tui|interactive|menu) tui_menu ;;
   gallery|browse|logos) gallery "${2:-}" ;;
@@ -1679,9 +1688,8 @@ echo -e "  ${CYAN}Commands:${NC}"
 echo -e "    ff                      Run fastfetch with your config"
 echo -e "    ff chafa [on|off|raw]   Toggle chafa image rendering"
 echo -e "    ff update               Update to latest stable"
-echo -e "    ff update -prerelease   Update to latest (including prereleases)"
-echo -e "    ff update check         Check for stable updates"
-echo -e "    ff update check -prerelease  Check all updates"
+echo -e "    ff update testing       Update to latest testing build"
+echo -e "    ff update check         Check for updates"
 echo -e "    ff version              Show version"
 echo -e "    ff logo [fit|name]      Set or fit logo to terminal size"
 echo -e "    ff backup               Backup current config"
