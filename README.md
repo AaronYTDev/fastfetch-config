@@ -17,4 +17,4 @@ curl -fsSL https://raw.githubusercontent.com/AaronYTDev/fastfetch-config/main/in
 
 # Everything else
 Read the [fastfetch-config wiki](https://ff-iwiki.netlify.app/#home).
-Alternatively, the AI-generated wiki located [here](https://www.mintlify.com/aaronYTDev/fastfetch-config) is better than any official documentation.
+Alternatively, the AI-generated wiki located [here](https://www.mintlify.com/AaronYTDev/fastfetch-config) is better than any official documentation.
