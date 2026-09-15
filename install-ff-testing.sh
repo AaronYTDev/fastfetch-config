@@ -22,15 +22,27 @@ need_cmd() { command -v "$1" &>/dev/null || die "Missing: $1"; }
 
 # ── Distro detection ────────────────────────────────────────
 detect_distro() {
-  if [ -f /etc/os-release ]; then
-    . /etc/os-release
-    DISTRO="$ID"
-  elif command -v lsb_release &>/dev/null; then
-    DISTRO=$(lsb_release -si 2>/dev/null | tr '[:upper:]' '[:lower:]')
+  case "$(uname -s 2>/dev/null)" in
+    Darwin)
+      DISTRO="macos"
+      OS_VERSION=$(sw_vers -productVersion 2>/dev/null || echo "")
+      ;;
+    *)
+      if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        DISTRO="$ID"
+      elif command -v lsb_release &>/dev/null; then
+        DISTRO=$(lsb_release -si 2>/dev/null | tr '[:upper:]' '[:lower:]')
+      else
+        DISTRO="unknown"
+      fi
+      ;;
+  esac
+  if [ "$DISTRO" = "macos" ] && [ -n "$OS_VERSION" ]; then
+    echo -e "  ${CYAN}Detected:${NC} ${DISTRO} ($OS_VERSION)"
   else
-    DISTRO="unknown"
+    echo -e "  ${CYAN}Detected:${NC} ${DISTRO}"
   fi
-  echo -e "  ${CYAN}Detected:${NC} ${DISTRO}"
 }
 
 # ── Install deps ────────────────────────────────────────────
@@ -63,7 +75,16 @@ install_deps() {
     gentoo)
       pkgs=""; command -v jq &>/dev/null || pkgs="$pkgs app-misc/jq"
       command -v chafa &>/dev/null || pkgs="$pkgs media-gfx/chafa"
+      command -v convert &>/dev/null || pkgs="$pkgs media-gfx/imagemagick"
       [ -n "$pkgs" ] && sudo emerge $pkgs ;;
+    macos|darwin)
+      if command -v brew &>/dev/null; then
+        brew install $pkgs
+      elif command -v port &>/dev/null; then
+        sudo port install $pkgs
+      else
+        die "No macOS package manager found. Install Homebrew first: https://brew.sh"
+      fi ;;
     *)
       warn "Unknown distro '${DISTRO}' - install jq, chafa, and imagemagick manually" ;;
   esac
@@ -243,6 +264,35 @@ jq_apply() {
   jq "$@" "$CONFIG_FILE" > "$tmp" && mv "$tmp" "$CONFIG_FILE"
 }
 
+is_numeric() { [[ "$1" =~ ^[0-9]+$ ]]; }
+
+IMAGE_TYPES=(chafa chafaRaw kitty kitty-direct iterm sixel)
+is_image_type() {
+  local t="$1" i=""
+  for i in "${IMAGE_TYPES[@]}"; do
+    [ "$i" = "$t" ] && return 0
+  done
+  return 1
+}
+
+is_image_ext() {
+  local ext="" f="$1"
+  case "$f" in
+    *.*) ext=$(echo "$f" | sed 's/.*\.//' | tr '[:upper:]' '[:lower:]') ;;
+  esac
+  case "$ext" in
+    png|jpg|jpeg|gif|bmp|webp|tiff|tif) return 0 ;;
+  esac
+  return 1
+}
+
+in_kitty() {
+  [ "${TERM_PROGRAM:-}" = "kitty" ] && return 0
+  case "${TERM:-}" in *kitty*) return 0 ;; esac
+  [ -n "${KITTY_WINDOW_ID:-${KITTY_PID:-}}" ] && return 0
+  return 1
+}
+
 # ── Version comparison ───────────────────────────────────────
 version_lt() {
   local v1="$1" v2="$2"
@@ -287,25 +337,51 @@ resolve_color() {
 }
 
 # ── Logo ─────────────────────────────────────────────────────
-get_logo() { jq -r '.logo.source // "auto"' "$CONFIG_FILE"; }
+get_logo() { jq -r 'if (.logo.source // "") == "" then "auto" else .logo.source end' "$CONFIG_FILE"; }
+
+_set_logo_type() {
+  local t="$1"
+  if [ -n "${2:-}" ]; then
+    jq_apply --arg t "$t" --arg s "$2" '.logo.type = $t | .logo.source = $s'
+  else
+    jq_apply --arg t "$t" '.logo.type = $t'
+  fi
+  set_logo_fit
+}
+
+_set_image_type() {
+  local t="$1" name="${2:-}"
+  if [ "$t" = "kitty" ] || [ "$t" = "kitty-direct" ]; then
+    in_kitty || warn "Kitty protocol needs a Kitty terminal — it will fall back elsewhere"
+  fi
+  if [ -n "$name" ]; then
+    local logo_path="$LOGOS_DIR/$(basename "$name")"
+    cp "$name" "$logo_path"
+    _set_logo_type "$t" "$logo_path"
+    echo "$t image rendering enabled with image: $name"
+  else
+    _set_logo_type "$t"
+    echo "$t image rendering enabled"
+  fi
+}
 
 set_logo_type_by_ext() {
-  local path="$1" label="$2" ext=""
-  case "$path" in
-    *.*) ext=$(echo "$path" | sed 's/.*\.//' | tr '[:upper:]' '[:lower:]') ;;
-  esac
-  case "$ext" in
-    png|jpg|jpeg|gif|bmp|webp|tiff|tif)
-      jq_apply --arg s "$path" '.logo.type = "chafa" | .logo.source = $s'
-      echo "Logo set to image (chafa): $label" ;;
-    *)
-      jq_apply --arg s "$path" '.logo.type = "file" | .logo.source = $s | del(.logo.width) | del(.logo.chafa)'
-      echo "Logo set to custom file: $label" ;;
-  esac
+  local path="$1" label="$2" preferred="${3:-}"
+  if is_image_ext "$path"; then
+    [ -n "$preferred" ] || preferred="chafa"
+    jq_apply --arg s "$path" --arg t "$preferred" '.logo.type = $t | .logo.source = $s'
+    echo "Logo set to image ($preferred): $label"
+  else
+    jq_apply --arg s "$path" '.logo.type = "file" | .logo.source = $s | del(.logo.width) | del(.logo.chafa)'
+    echo "Logo set to custom file: $label"
+  fi
 }
 
 set_logo() {
-  local name="$1"
+  local name="$1" preferred="${2:-}"
+  if [ -z "$preferred" ]; then
+    if in_kitty; then preferred="kitty"; else preferred="chafa"; fi
+  fi
 
   if [ "$name" = "auto" ]; then
     jq_apply '.logo.type = "auto" | .logo.source = ""'
@@ -313,9 +389,9 @@ set_logo() {
   elif [ -f "$name" ]; then
     local logo_path="$LOGOS_DIR/$(basename "$name")"
     cp "$name" "$logo_path"
-    set_logo_type_by_ext "$logo_path" "$name"
+    set_logo_type_by_ext "$logo_path" "$name" "$preferred"
   elif [ -f "$LOGOS_DIR/$name" ]; then
-    set_logo_type_by_ext "$LOGOS_DIR/$name" "$name"
+    set_logo_type_by_ext "$LOGOS_DIR/$name" "$name" "$preferred"
   else
     jq_apply --arg s "$name" '.logo.type = "builtin" | .logo.source = $s | del(.logo.width) | del(.logo.chafa)'
     echo "Logo set to built-in: $name"
@@ -330,7 +406,7 @@ set_logo_fit() {
   t=$(jq -r '.logo.type // "auto"' "$CONFIG_FILE")
 
   case "$t" in
-    chafa|chafaRaw)
+    chafa|chafaRaw|kitty|kitty-direct|iterm|sixel)
       local info_width
       info_width=$(fastfetch --logo-type none --pipe 2>/dev/null \
         | sed 's/\x1b\[[0-9;]*m//g' \
@@ -347,7 +423,7 @@ set_logo_fit() {
       [ "$ch" -lt 5 ]  && ch=5;  [ "$ch" -gt 40 ] && ch=40
       jq_apply --argjson w "$cw" --argjson h "$ch" \
         '.logo.width = $w | .logo.height = $h'
-      echo "  Fit: chafa ${cw}x${ch} @ ${cols}x${lines} term" ;;
+      echo "  Fit: ${t} ${cw}x${ch} @ ${cols}x${lines} term" ;;
     file|builtin)
       lh=$(( lines - 15 ))
       [ "$lh" -lt 5 ] && lh=5; [ "$lh" -gt 50 ] && lh=50
@@ -356,48 +432,145 @@ set_logo_fit() {
   esac
 }
 
-# ── Chafa ────────────────────────────────────────────────────
-get_chafa() {
+# Manual image size control. For image types, setting ONE dimension
+# clears the other so fastfetch scales proportionally (aspect kept);
+# set_logo_size sets an exact cell box. "auto" clears both for native
+# auto-scaling.
+is_current_image_type() {
   local t; t=$(jq -r '.logo.type // "auto"' "$CONFIG_FILE")
-  case "$t" in chafa|chafaRaw) echo "enabled ($t)";; *) echo "disabled";; esac
+  is_image_type "$t"
+}
+
+logo_width() {
+  case "${1:-}" in
+    "")
+      echo "Current logo width: $(jq -r '.logo.width // "auto"' "$CONFIG_FILE")"
+      return 0 ;;
+    auto|reset|clear)
+      jq_apply 'del(.logo.width)'
+      echo "Logo width set to auto" ;;
+    *)
+      is_numeric "$1" || { echo "Error: width must be a positive integer or 'auto'"; return 1; }
+      if is_current_image_type; then
+        jq_apply --argjson w "$1" '.logo.width = $w | del(.logo.height)'
+      else
+        jq_apply --argjson w "$1" '.logo.width = $w'
+      fi
+      echo "Logo width set to ${1}" ;;
+  esac
+}
+
+logo_height() {
+  case "${1:-}" in
+    "")
+      echo "Current logo height: $(jq -r '.logo.height // "auto"' "$CONFIG_FILE")"
+      return 0 ;;
+    auto|reset|clear)
+      jq_apply 'del(.logo.height)'
+      echo "Logo height set to auto" ;;
+    *)
+      is_numeric "$1" || { echo "Error: height must be a positive integer or 'auto'"; return 1; }
+      if is_current_image_type; then
+        jq_apply --argjson h "$1" '.logo.height = $h | del(.logo.width)'
+      else
+        jq_apply --argjson h "$1" '.logo.height = $h'
+      fi
+      echo "Logo height set to ${1}" ;;
+  esac
+}
+
+set_logo_size() {
+  local w h
+  case "${1:-}" in
+    auto|reset|clear|"")
+      jq_apply 'del(.logo.width, .logo.height)'
+      echo "Logo size set to auto"
+      return 0 ;;
+  esac
+  case "$1" in
+    *[xX×]*)
+      w="${1%%[xX×]*}"; h="${1#*[xX×]}" ;;
+    *)
+      w="$1"; h="${2:-}" ;;
+  esac
+  if is_numeric "$w" && is_numeric "$h"; then
+    jq_apply --argjson w "$w" --argjson h "$h" '.logo.width = $w | .logo.height = $h'
+    echo "Logo size set to ${w}x${h} cells"
+  else
+    echo "Error: expected <width>x<height> (e.g. 40x16) or 'auto'"
+    return 1
+  fi
+}
+
+# ── Image rendering (chafa / kitty) ─────────────────────────
+get_kitty() {
+  local t; t=$(jq -r '.logo.type // "auto"' "$CONFIG_FILE")
+  case "$t" in
+    kitty|kitty-direct) echo "enabled ($t)";;
+    *) echo "disabled";;
+  esac
+}
+
+get_image() {
+  local t; t=$(jq -r '.logo.type // "auto"' "$CONFIG_FILE")
+  if is_image_type "$t"; then echo "enabled ($t)"; else echo "disabled"; fi
 }
 
 set_chafa() {
   local mode="$1" name="${2:-}"
   case "$mode" in
-    on|enable|chafa)
-      if [ -n "$name" ]; then
-        local logo_path="$LOGOS_DIR/$(basename "$name")"
-        cp "$name" "$logo_path"
-        jq_apply --arg s "$logo_path" '.logo.type = "chafa" | .logo.source = $s'
-        echo "Chafa enabled with image: $name"
-      else
-        jq_apply '.logo.type = "chafa"'
-        echo "Chafa logo rendering enabled"
-      fi ;;
-    raw|chafaRaw)
-      if [ -n "$name" ]; then
-        local logo_path="$LOGOS_DIR/$(basename "$name")"
-        cp "$name" "$logo_path"
-        jq_apply --arg s "$logo_path" '.logo.type = "chafaRaw" | .logo.source = $s'
-        echo "Chafa raw enabled with image: $name"
-      else
-        jq_apply '.logo.type = "chafaRaw"'
-        echo "Chafa raw rendering enabled"
-      fi ;;
+    on|enable|chafa)    _set_image_type chafa "$name" ;;
+    raw|chafaRaw)       _set_image_type chafaRaw "$name" ;;
     off|disable|auto)
       jq_apply '.logo.type = "auto" | .logo.source = "" | del(.logo.width) | del(.logo.chafa) | del(.logo.height)'
-      echo "Chafa logo rendering disabled" ;;
+      echo "Image rendering disabled (logo type set to auto)" ;;
+    *)
+      echo "Unknown mode: $mode" ;;
   esac
-  set_logo_fit
 }
 
-FF_IS_CHAFA=0
-auto_chafa() {
+set_kitty() {
+  local mode="$1" name="${2:-}"
+  case "$mode" in
+    on|enable|kitty)      _set_image_type kitty "$name" ;;
+    direct|kitty-direct)  _set_image_type kitty-direct "$name" ;;
+    off|disable|auto)     set_chafa off ;;
+    *)
+      echo "Unknown mode: $mode" ;;
+  esac
+}
+
+FF_IS_IMAGE=0
+auto_image() {
   local t
   t=$(jq -r '.logo.type // "auto"' "$CONFIG_FILE")
-  FF_IS_CHAFA=0
-  [ "$t" = "chafa" ] || [ "$t" = "chafaRaw" ] && FF_IS_CHAFA=1 || true
+  FF_IS_IMAGE=0
+  is_image_type "$t" && FF_IS_IMAGE=1 || true
+}
+
+# Auto mode: pick the logo type from the current SOURCE, so the rendering
+# always matches. Image source → kitty native when running in Kitty, chafa
+# elsewhere. Text file / built-in / no source → ascii (normal). Explicit
+# sub-modes of the same family (kitty-direct, chafaRaw) are preserved.
+auto_logo_mode() {
+  local src t
+  src=$(jq -r '.logo.source // ""' "$CONFIG_FILE")
+  t=$(jq -r '.logo.type // "auto"' "$CONFIG_FILE")
+  if [ -n "$src" ] && [ ! -f "$src" ] && [ -f "$LOGOS_DIR/$(basename "$src")" ]; then
+    src="$LOGOS_DIR/$(basename "$src")"
+  fi
+  if [ -n "$src" ] && [ -f "$src" ] && is_image_ext "$src"; then
+    if in_kitty; then
+      case "$t" in kitty|kitty-direct) return 0 ;; esac
+      jq_apply '.logo.type = "kitty"'
+    else
+      case "$t" in chafa|chafaRaw) return 0 ;; esac
+      jq_apply '.logo.type = "chafa"'
+    fi
+  else
+    case "$t" in auto|builtin|file) return 0 ;; esac
+    jq_apply '.logo.type = "auto" | del(.logo.width) | del(.logo.chafa)'
+  fi
 }
 
 # ── OS Name ──────────────────────────────────────────────────
@@ -606,7 +779,7 @@ show_diag() {
   r="$r\nShell: ${SHELL:-?} / Terminal: ${TERM:-?}"
   r="$r\nCurrent logo: $(get_logo)"
   r="$r\nCurrent OS name: $(get_osname)"
-  r="$r\nChafa: $(get_chafa)"
+  r="$r\nImage: $(get_image)"
   r="$r\nModules: $(list_modules | tr '\n' ' ')"
   echo -e "$r"
 }
@@ -626,6 +799,21 @@ backup_config() {
   echo "Backup saved: $dest"
 }
 
+stat_mtime() {
+  if stat -c %Y "$1" >/dev/null 2>&1; then
+    stat -c %Y "$1"
+  else
+    stat -f %m "$1" 2>/dev/null || echo 0
+  fi
+}
+stat_mtime_str() {
+  if stat -c "%y" "$1" >/dev/null 2>&1; then
+    stat -c "%y" "$1" | cut -d. -f1
+  else
+    stat -f "%Sm" "$1" 2>/dev/null || echo "unknown"
+  fi
+}
+
 list_backups() {
   mkdir -p "$BACKUP_DIR"
   shopt -s nullglob; local files=("$BACKUP_DIR"/*.jsonc); shopt -u nullglob
@@ -633,7 +821,7 @@ list_backups() {
   echo "Available backups:"
   for f in "${files[@]}"; do
     local bname; bname=$(basename "$f" .jsonc)
-    local bdate; bdate=$(stat -c "%y" "$f" 2>/dev/null | cut -d. -f1)
+    local bdate; bdate=$(stat_mtime_str "$f")
     echo "  $bname  ($bdate)"
   done
 }
@@ -663,7 +851,7 @@ clean_backups() {
   local cutoff=$(( now - days * 86400 ))
   local removed=0
   for f in "${files[@]}"; do
-    local mtime; mtime=$(stat -c "%Y" "$f" 2>/dev/null || echo 0)
+    local mtime; mtime=$(stat_mtime "$f")
     [ "$mtime" -gt 0 ] && [ "$mtime" -lt "$cutoff" ] && { rm "$f"; removed=$((removed + 1)); }
   done
   [ "$removed" -gt 0 ] && echo "Cleaned $removed backup(s) older than $days days" || echo "No backups older than $days days"
@@ -685,11 +873,12 @@ diff_config() {
   if command -v diff &>/dev/null; then
     diff --color=auto -u "$src" "$CONFIG_FILE" || true
   else
-    echo "diff not found — install diffutils to see changes"
-    echo "Current config vs $name:"
-    echo "--- $name"
-    echo "+++ current"
+    echo "diff not found — install diffutils to see a proper diff"
+    echo "--- $name -------------------------------------------------------------------------"
     cat "$src"
+    echo
+    echo "+++ current ---------------------------------------------------------------------"
+    cat "$CONFIG_FILE"
   fi
 }
 
@@ -697,7 +886,7 @@ diff_config() {
 show_stats() {
   local logo_type; logo_type=$(jq -r '.logo.type // "auto"' "$CONFIG_FILE")
   local logo_src;  logo_src=$(jq -r '.logo.source // ""' "$CONFIG_FILE")
-  local chafa_mode=""; [ "$logo_type" = "chafa" ] || [ "$logo_type" = "chafaRaw" ] && chafa_mode=" (chafa)"
+  local img_mode=""; is_image_type "$logo_type" && img_mode=" ($logo_type)" || true
   echo -e "${C_BOLD}System info:${C_RST}"
   if command -v fastfetch &>/dev/null; then
     fastfetch --logo-type none --pipe 2>/dev/null | head -12 || echo "  (fastfetch unavailable)"
@@ -706,7 +895,7 @@ show_stats() {
   echo -e "${C_BOLD}Config:${C_RST}"
   echo "  Version:    $VERSION"
   echo "  Config:     $CONFIG_FILE"
-  echo "  Logo:       ${logo_src:-auto}${chafa_mode}"
+  echo "  Logo:       ${logo_src:-auto}${img_mode}"
   echo "  OS name:    $(get_osname)"
   local mod_count; mod_count=$(list_modules | wc -l)
   echo "  Modules:    $mod_count"
@@ -807,7 +996,7 @@ check_update_quiet() {
   [ "$VERSION" = "git-testing" ] && return
   local cache_file="$BACKUP_DIR/.update_check" remote_version
   if [ -f "$cache_file" ]; then
-    local age=$(( $(date +%s) - $(stat -c %Y "$cache_file") ))
+    local age=$(( $(date +%s) - $(stat_mtime "$cache_file") ))
     [ "$age" -lt 86400 ] && return
   fi
   remote_version=$(curl -sL --connect-timeout 3 --max-time 4 \
@@ -822,17 +1011,20 @@ check_update_quiet() {
 
 # ── Logo preview / export / import ──────────────────────────
 preview_logo() {
+  auto_logo_mode
   local t; t=$(jq -r '.logo.type // "auto"' "$CONFIG_FILE")
   echo "Logo type: $t"
   echo "Source: $(get_logo)"
   echo "Logo dir: $LOGOS_DIR"
-  case "$t" in
-    chafa|chafaRaw)
-      local w h
-      w=$(jq -r '.logo.width // "auto"' "$CONFIG_FILE")
-      h=$(jq -r '.logo.height // "auto"' "$CONFIG_FILE")
-      echo "Dimensions: ${w}x${h}" ;;
-  esac
+  if is_image_type "$t"; then
+    local w h
+    w=$(jq -r '.logo.width // "auto"' "$CONFIG_FILE")
+    h=$(jq -r '.logo.height // "auto"' "$CONFIG_FILE")
+    echo "Dimensions: ${w}x${h}"
+    if [ "$t" = "kitty" ] || [ "$t" = "kitty-direct" ]; then
+      in_kitty && echo "Terminal: runs natively in Kitty" || echo "Terminal: not Kitty — image may not display"
+    fi
+  fi
 }
 
 export_config() {
@@ -969,14 +1161,19 @@ Logo:
   logo [name|fit]       Show/set logo, "fit" to resize, "auto" for detection
   logo install          Install bundled ASCII art logos
   logo preview          Show logo details
-  logo width|height <n>  Manually set logo dimensions
+  logo size <w>x<h>     Set exact image size in cells (e.g. 40x16; "size auto" resets)
+  logo width|height <n> Set one dimension (aspect ratio kept); "auto" resets
+  Auto-detection: image sources render via Kitty in a kitty terminal, chafa
+                elsewhere; text files and built-in logos render as plain ASCII
   color <slot> <c>      Set logo color slot (1-9), e.g. ff color 1 blue
   color list            Show logo color overrides
   color names           List all available color names
   color search <term>   Search for a color name
   color reset           Clear all logo color overrides
   list-logos            List available built-in logos
-  chafa [on|off|raw|fit] [file]  Show/set chafa image rendering mode
+  chafa [on|off|raw|fit|size <w>x<h>] [file]  Show/set chafa image rendering mode
+  kitty [on|direct|off|size <w>x<h>] [file]   Show/set native Kitty image rendering
+  image [on|raw|off]    Alias for "chafa" image rendering
 
 OS:
   os|osname [name]      Show/set OS name, or "auto" to restore detection
@@ -1002,8 +1199,8 @@ Other:
   doctor|check          Check for common setup issues
   update [check] [testing]       Check for / install stable or testing updates
   version               Show version
-   gallery|browse        Browse and preview built-in logos
-   tui|interactive|menu   Open interactive TUI menu
+  gallery|browse        Browse and preview built-in logos
+  tui|interactive|menu  Open interactive TUI menu
   help                  Show this help
 
 Modules: host, kernel, uptime, packages, shell, de, wm, cpu, memory,
@@ -1030,9 +1227,9 @@ Examples:
   ff                    Run fastfetch directly
   ff stats              Quick system stats
   ff search <term>      Search config
-   ff logo install       Install bundled ASCII art logos
-   ff gallery            Browse built-in logos
-   ff clean [days]       Remove old backups
+  ff logo install       Install bundled ASCII art logos
+  ff gallery            Browse built-in logos
+  ff clean [days]       Remove old backups
   fastfetch-config update
   fastfetch-config update check
   fastfetch-config update testing
@@ -1107,7 +1304,7 @@ tui_logo() {
   _tui_center "${C_CYAN_B}${C_BOLD}Logo${C_RST}"
   _tui_sep "─"
   echo -e "  ${C_DIM}Current: $(get_logo)${C_RST}"
-  echo -e "  ${C_DIM}Modules: $(list_modules | tr '\n' ' ')${C_RST}"
+  echo -e "  ${C_DIM}Type:    $(jq -r '.logo.type // "auto"' "$CONFIG_FILE")${C_RST}"
   echo ""
   read -p "$(echo -e "${C_CYAN_B}▸${C_RST} Logo name (or 'auto'): ")" name
   set_logo "$name"
@@ -1118,29 +1315,33 @@ tui_chafa() {
   while true; do
     clear
     _tui_line
-    _tui_center "${C_CYAN_B}${C_BOLD}Chafa${C_RST}"
+    _tui_center "${C_CYAN_B}${C_BOLD}Image rendering${C_RST}"
     _tui_sep "─"
-    echo -e "  ${C_DIM}Current: $(get_chafa)${C_RST}"
+    echo -e "  ${C_DIM}Current: $(get_image)${C_RST}"
     echo ""
     echo -e "  ${C_GREEN_B}1)${C_RST}  Enable chafa"
-    echo -e "  ${C_GREEN_B}2)${C_RST}  Enable chafa (raw mode)"
-    echo -e "  ${C_GREEN_B}3)${C_RST}  Enable with image (normal)"
-    echo -e "  ${C_GREEN_B}4)${C_RST}  Enable with image (raw)"
-    echo -e "  ${C_GREEN_B}5)${C_RST}  Disable chafa"
-    echo -e "  ${C_GREEN_B}6)${C_RST}  Re-fit to terminal"
-    echo -e "  ${C_RED_B:-${C_RED}}7)${C_RST}  Back"
+    echo -e "  ${C_GREEN_B}2)${C_RST}  Enable chafa with image"
+    echo -e "  ${C_GREEN_B}3)${C_RST}  Enable chafa raw"
+    echo -e "  ${C_GREEN_B}4)${C_RST}  Enable kitty (native image)"
+    echo -e "  ${C_GREEN_B}5)${C_RST}  Enable kitty-direct"
+    echo -e "  ${C_GREEN_B}6)${C_RST}  Enable kitty with image"
+    echo -e "  ${C_GREEN_B}7)${C_RST}  Disable image rendering"
+    echo -e "  ${C_GREEN_B}8)${C_RST}  Re-fit to terminal"
+    echo -e "  ${C_RED_B:-${C_RED}}9)${C_RST}  Back"
     echo ""
     _tui_bot
     echo ""
     read -n 1 -p "$(echo -e "${C_CYAN_B}▸${C_RST} Select option: ")" choice; echo
     case "$choice" in
       1) set_chafa on; read -p "Press enter..." _ ;;
-      2) set_chafa raw; read -p "Press enter..." _ ;;
-      3) read -p "Image file path: " img; [ -f "$img" ] && set_chafa on "$img" || echo -e "${C_RED}File not found: $img${C_RST}"; read -p "Press enter..." _ ;;
-      4) read -p "Image file path: " img; [ -f "$img" ] && set_chafa raw "$img" || echo -e "${C_RED}File not found: $img${C_RST}"; read -p "Press enter..." _ ;;
-      5) set_chafa off; read -p "Press enter..." _ ;;
-      6) set_logo_fit; read -p "Press enter..." _ ;;
-      7|q|back|b) break ;;
+      2) read -p "Image file path: " img; [ -f "$img" ] && set_chafa on "$img" || echo -e "${C_RED}File not found: $img${C_RST}"; read -p "Press enter..." _ ;;
+      3) set_chafa raw; read -p "Press enter..." _ ;;
+      4) set_kitty on; read -p "Press enter..." _ ;;
+      5) set_kitty direct; read -p "Press enter..." _ ;;
+      6) read -p "Image file path: " img; [ -f "$img" ] && set_kitty on "$img" || echo -e "${C_RED}File not found: $img${C_RST}"; read -p "Press enter..." _ ;;
+      7) set_chafa off; read -p "Press enter..." _ ;;
+      8) set_logo_fit; read -p "Press enter..." _ ;;
+      9|q|back|b) break ;;
       *) echo -e "${C_RED}Invalid option${C_RST}"; sleep 1 ;;
     esac
   done
@@ -1222,7 +1423,7 @@ tui_reset() {
 }
 
 tui_menu() {
-  auto_chafa; check_update_quiet
+  auto_logo_mode; auto_image; check_update_quiet
   local ver; ver=$(fastfetch-config version 2>/dev/null | awk '{print $NF}')
   while true; do
     clear
@@ -1230,7 +1431,7 @@ tui_menu() {
     _tui_center "${C_CYAN_B}${C_BOLD}fastfetch-config TUI  ${C_DIM}${ver:-?}${C_RST}"
     _tui_sep "═"
     echo ""
-    echo -e "  ${C_GREEN_B}1)${C_RST}  Modules               ${C_GREEN_B}6)${C_RST}  Chafa"
+    echo -e "  ${C_GREEN_B}1)${C_RST}  Modules               ${C_GREEN_B}6)${C_RST}  Images"
     echo -e "  ${C_GREEN_B}2)${C_RST}  Logo                  ${C_GREEN_B}7)${C_RST}  Reset"
     echo -e "  ${C_GREEN_B}3)${C_RST}  OS Name               ${C_GREEN_B}8)${C_RST}  Update"
     echo -e "  ${C_GREEN_B}4)${C_RST}  Colors                ${C_GREEN_B}9)${C_RST}  Backup / Restore"
@@ -1377,24 +1578,23 @@ gallery() {
 main() {
 need_jq
 mkdir -p "$LOGOS_DIR" "$BACKUP_DIR"
+[ -f "$CONFIG_FILE" ] || {
+  gen_default_config > "$CONFIG_FILE"
+  echo "Created default config at $CONFIG_FILE"
+}
 
 case "${1:-}" in
   logo)
     case "${2:-}" in
       fit) set_logo_fit ;;
       preview|show|info) preview_logo ;;
-      width)
-        [ -z "${3:-}" ] && { echo "Current logo width: $(jq -r '.logo.width // "auto"' "$CONFIG_FILE")"; exit 0; }
-        jq_apply --argjson w "${3}" '.logo.width = $w'
-        echo "Logo width set to ${3}" ;;
-      height)
-        [ -z "${3:-}" ] && { echo "Current logo height: $(jq -r '.logo.height // "auto"' "$CONFIG_FILE")"; exit 0; }
-        jq_apply --argjson h "${3}" '.logo.height = $h'
-        echo "Logo height set to ${3}" ;;
+      width)    logo_width "${3:-}" ;;
+      height)   logo_height "${3:-}" ;;
+      size)     set_logo_size "${3:-}" "${4:-}" ;;
       install) install_custom_logos ;;
       random|rand) echo "Use 'ff os random' for random OS names instead." ;;
       "")  echo "Current logo: $(get_logo)" ;;
-      *)   set_logo "$2" ;;
+      *)   set_logo "$2" "${3:-}" ;;
     esac ;;
   os|osname)
     case "${2:-}" in
@@ -1429,20 +1629,45 @@ case "${1:-}" in
       on|enable)        set_chafa on "${3:-}" ;;
       raw|chafaRaw)     set_chafa raw "${3:-}" ;;
       fit|refit)        set_logo_fit ;;
+      size)             set_logo_size "${3:-}" "${4:-}" ;;
       off|disable|auto) set_chafa off ;;
       "")
-        echo "Chafa: $(get_chafa)"
-        echo "Usage: fastfetch-config chafa [on|off|raw|fit] [image-file]"
+        echo "Image: $(get_image)"
+        echo "Usage: fastfetch-config chafa [on|off|raw|fit|size] [image-file]"
         echo "  on [file]   Enable chafa (optionally with an image)"
         echo "  raw [file]  Enable chafa raw mode (optionally with an image)"
         echo "  fit         Re-fit chafa to terminal size"
+        echo "  size <WxH>  Set exact image size in cells (size auto to reset)"
         echo "  off         Disable chafa, revert to auto" ;;
-      *) echo "Unknown option: $2"; echo "Usage: fastfetch-config chafa [on|off|raw|fit] [image-file]" ;;
+      *) echo "Unknown option: $2"; echo "Usage: fastfetch-config chafa [on|off|raw|fit|size] [image-file]" ;;
+    esac ;;
+  kitty)
+    case "${2:-}" in
+      on|enable)           set_kitty on "${3:-}" ;;
+      direct|kitty-direct) set_kitty direct "${3:-}" ;;
+      size)                set_logo_size "${3:-}" "${4:-}" ;;
+      off|disable|auto)    set_kitty off ;;
+      "")
+        echo "Kitty: $(get_kitty)"
+        echo "Usage: fastfetch-config kitty [on|direct|off|size] [image-file]"
+        echo "  on [file]      Render with the Kitty graphics protocol (optionally an image)"
+        echo "  direct [file]  Render with Kitty in direct mode"
+        echo "  size <WxH>     Set exact image size in cells (size auto to reset)"
+        echo "  off            Disable image rendering, revert to auto" ;;
+      *) echo "Unknown option: $2"; echo "Usage: fastfetch-config kitty [on|direct|off|size] [image-file]" ;;
+    esac ;;
+  image)
+    case "${2:-}" in
+      on|enable)        set_chafa on "${3:-}" ;;
+      raw)              set_chafa raw "${3:-}" ;;
+      off|disable|auto) set_chafa off ;;
+      status|"")        echo "Image rendering: $(get_image)" ;;
+      *) echo "Unknown option: $2"; echo "Usage: fastfetch-config image [on|raw|off] [image-file]" ;;
     esac ;;
   status)
     echo "Fastfetch config: $CONFIG_FILE"
     echo "Logo: $(get_logo)"
-    echo "Chafa: $(get_chafa)"
+    echo "Image: $(get_image)"
     echo "OS name: $(get_osname)"
     echo "Custom logos dir: $LOGOS_DIR"
     cols=$(get_colors)
@@ -1451,6 +1676,7 @@ case "${1:-}" in
   stats|info) show_stats ;;
   clean)
     days="${2:-30}"
+    is_numeric "$days" || { echo "Error: days must be a positive integer"; exit 1; }
     clean_backups "$days" ;;
   diff)
     diff_config "${2:-}" ;;
@@ -1464,8 +1690,10 @@ case "${1:-}" in
                add_module "$3" ;;
       remove|rm) [ -z "${3:-}" ] && { echo "Usage: fastfetch-config module remove <name>"; exit 1; }
                  remove_module "$3" ;;
-      move|mv|reorder) [ -z "${3:-}" ] || [ -z "${4:-}" ] && { echo "Usage: fastfetch-config module move <name> <position>"; exit 1; }
-                       move_module "$3" "$4" ;;
+      move|mv|reorder)
+        [ -z "${3:-}" ] || [ -z "${4:-}" ] && { echo "Usage: fastfetch-config module move <name> <position>"; exit 1; }
+        is_numeric "$4" || { echo "Error: position must be a positive integer"; exit 1; }
+        move_module "$3" "$4" ;;
       set)   [ -z "${3:-}" ] || [ -z "${4:-}" ] || [ -z "${5:-}" ] && { echo "Usage: fastfetch-config module set <name> <key> <value>"; exit 1; }
              set_module "$3" "$4" "$5" ;;
       eset)  [ -z "${3:-}" ] || [ -z "${4:-}" ] && { echo "Usage: fastfetch-config module eset <keyname> <formatname>"; exit 1; }
@@ -1519,9 +1747,10 @@ case "${1:-}" in
   gallery|browse|logos) gallery "${2:-}" ;;
   help|--help|-h) usage ;;
   *)
-    auto_chafa
+    auto_logo_mode
+    auto_image
     check_update_quiet
-    [ "$FF_IS_CHAFA" -eq 1 ] && set -- "$@" --pipe false
+    [ "$FF_IS_IMAGE" -eq 1 ] && set -- "$@" --pipe false
     exec fastfetch "$@" ;;
 esac
 }
@@ -1675,7 +1904,7 @@ install_deps
 install_scripts
 setup_config "$@"
 
-ok "Chafa disabled by default (use 'ff chafa on' to enable)"
+ok "Image rendering disabled by default (use 'ff chafa on' or 'ff kitty on' to enable)"
 
 setup_path
 
@@ -1686,7 +1915,9 @@ echo -e "${GREEN}╚════════════════════
 echo ""
 echo -e "  ${CYAN}Commands:${NC}"
 echo -e "    ff                      Run fastfetch with your config"
-echo -e "    ff chafa [on|off|raw]   Toggle chafa image rendering"
+echo -e "    ff chafa [on|off|raw|fit]   Toggle chafa image rendering"
+echo -e "    ff kitty [on|direct]    Toggle native Kitty image rendering"
+echo -e "    ff logo size 40x16     Set exact image size (kitty/chafa)"
 echo -e "    ff update               Update to latest stable"
 echo -e "    ff update testing       Update to latest testing build"
 echo -e "    ff update check         Check for updates"
