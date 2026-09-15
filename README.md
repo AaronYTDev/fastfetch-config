@@ -16,5 +16,4 @@ To install the testing version, use this:
 `curl -fsSL https://raw.githubusercontent.com/AaronYTDev/fastfetch-config/main/install-ff-testing.sh | bash`
 
 # Everything else
-Read the [fastfetch-config wiki](https://ff-iwiki.netlify.app/#home).
-Alternatively, the AI-generated wiki located [here](https://www.mintlify.com/AaronYTDev/fastfetch-config) is better than any official documentation.
+Wiki [here](https://www.mintlify.com/AaronYTDev/fastfetch-config)
