@@ -716,7 +716,7 @@ set_osname_random() {
     "Xubuntu" "Kubuntu" "Ubuntu MATE" "Ubuntu Budgie" "Ubuntu Studio"
     "KaOS" "Feren OS" "Netrunner" "Nitrux" "Mabox"
     "ArcoLinux" "CachyOS" "RebornOS" "ArchLabs" "Antergos"
-    "Funtoo" "Calculate" "Sabayon" "Pentoo" "Gentoox" "NixOS" "LFS" "Linux" "Pay Respects Linux x86_64"
+    "Funtoo" "Calculate" "Sabayon" "Pentoo" "Gentoox"
   )
   local count=${#distros[@]}
   local pick=$(( RANDOM % count ))
