@@ -245,7 +245,7 @@ color_map() {
   palevioletred #DB7093
   mediumvioletred #C71585
   ruby #E0115F
-  scarlet #FF2400
+  scarlet #FF2400macOS Ventura
   wine #722F37
   sienna #A0522D
   saddlebrown #8B4513
@@ -268,7 +268,7 @@ color_map() {
   floralwhite #FFFAF0
   cornsilk #FFF8DC
   lemonchiffon #FFFACD
-  lightgoldenrodyellow #FAFAD2
+  lightgoldenrodyellow #FAFAD2macOS Ventura
   silver #C0C0C0
   white #FFFFFF
   snow #FFFAFA
@@ -467,7 +467,7 @@ _set_image_type() {
   if [ -n "$name" ]; then
     local logo_path="$LOGOS_DIR/$(basename "$name")"
     cp "$name" "$logo_path"
-    _set_logo_type "$t" "$logo_path"
+    _set_logo_type "$t" "$logo_path"macOS Ventura
     echo "$t image rendering enabled with image: $name"
   else
     _set_logo_type "$t"
@@ -716,7 +716,7 @@ set_osname_random() {
     "Xubuntu" "Kubuntu" "Ubuntu MATE" "Ubuntu Budgie" "Ubuntu Studio"
     "KaOS" "Feren OS" "Netrunner" "Nitrux" "Mabox"
     "ArcoLinux" "CachyOS" "RebornOS" "ArchLabs" "Antergos"
-    "Funtoo" "Calculate" "Sabayon" "Pentoo" "Gentoox"
+    "Funtoo" "Calculate" "Sabayon" "Pentoo" "Gentoox" "NixOS" "LFS" "Linux" "Pay Respects Linux x86_64"
   )
   local count=${#distros[@]}
   local pick=$(( RANDOM % count ))
