@@ -8,6 +8,7 @@ VERSION="git-testing"
 BIN_DIR="${HOME}/.local/bin"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/fastfetch"
 LOGOS_DIR="$CONFIG_DIR/logos"
+RC_FILE=""
 
 # ── Installer UI Colors ──────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -245,7 +246,7 @@ color_map() {
   palevioletred #DB7093
   mediumvioletred #C71585
   ruby #E0115F
-  scarlet #FF2400macOS Ventura
+  scarlet #FF2400
   wine #722F37
   sienna #A0522D
   saddlebrown #8B4513
@@ -268,7 +269,7 @@ color_map() {
   floralwhite #FFFAF0
   cornsilk #FFF8DC
   lemonchiffon #FFFACD
-  lightgoldenrodyellow #FAFAD2macOS Ventura
+  lightgoldenrodyellow #FAFAD2
   silver #C0C0C0
   white #FFFFFF
   snow #FFFAFA
@@ -300,7 +301,10 @@ color_hex() {
 
 # ── Utility functions ────────────────────────────────────────
 CLEANUP_FILES=()
-_cleanup() { rm -f "${CLEANUP_FILES[@]}"; }
+_cleanup() {
+  [ "${#CLEANUP_FILES[@]}" -eq 0 ] && return
+  rm -f "${CLEANUP_FILES[@]}"
+}
 trap _cleanup EXIT
 
 die() { echo -e "${C_RED}::${C_RST} $1" >&2; exit 1; }
@@ -467,7 +471,7 @@ _set_image_type() {
   if [ -n "$name" ]; then
     local logo_path="$LOGOS_DIR/$(basename "$name")"
     cp "$name" "$logo_path"
-    _set_logo_type "$t" "$logo_path"macOS Ventura
+    _set_logo_type "$t" "$logo_path"
     echo "$t image rendering enabled with image: $name"
   else
     _set_logo_type "$t"
@@ -509,37 +513,152 @@ set_logo() {
   set_logo_fit
 }
 
-set_logo_fit() {
-  local lines cols t cw ch lh
-  lines=$(tput lines 2>/dev/null || echo 40)
-  cols=$(tput cols 2>/dev/null || echo 80)
+logo_fit_dims() {
+  local lines cols t info_width cw ch
+  lines=$(tput lines 2>/dev/null) || return 1
+  cols=$(tput cols 2>/dev/null) || return 1
   t=$(jq -r '.logo.type // "auto"' "$CONFIG_FILE")
+  is_image_type "$t" || return 1
 
+  # How wide is the info text fastfetch prints beside the logo?
+  info_width=$(fastfetch --logo-type none --pipe 2>/dev/null \
+    | sed $'s/\033\\[[0-9;]*m//g' \
+    | awk 'length > max { max = length } END { print max+0 }')
+  [ -z "$info_width" ] || [ "$info_width" -lt 10 ] && info_width=$(( cols > 80 ? cols * 45 / 100 : cols * 5 / 10 ))
+
+  # Give the image exactly the space left over after the info text, so neither
+  # the logo nor the text wraps. On very wide terminals, don't let a little
+  # text blow the logo up past 60% of the screen.
+  cw=$(( cols - info_width - 4 ))
+  [ "$cw" -lt 20 ] && cw=20
+  if [ "$info_width" -lt $(( cols * 36 / 100 )) ]; then
+    local cap=$(( cols * 6 / 10 ))
+    [ "$cw" -gt "$cap" ] && cw=$cap
+  fi
+  [ "$cw" -gt 80 ] && cw=80
+  ch=$(( lines - 12 ))
+  [ "$ch" -lt 5 ] && ch=5; [ "$ch" -gt 40 ] && ch=40
+  echo "$cw $ch"
+}
+
+apply_fit_dims() {
+  local w="$1" h="$2" curw curh
+  curw=$(jq -r '.logo.width // ""' "$CONFIG_FILE")
+  curh=$(jq -r '.logo.height // ""' "$CONFIG_FILE")
+  [ "$curw" = "$w" ] && [ "$curh" = "$h" ] && return 0
+  jq_apply --argjson w "$w" --argjson h "$h" \
+    '.logo.width = $w | .logo.height = $h'
+}
+
+# Raw ASCII logo art for the CURRENT text logo (a file source is read directly;
+# a builtin is extracted from fastfetch's own render). Prints the art or fails.
+logo_art_text() {
+  local t src full info wi wt wl
+  t=$(jq -r '.logo.type // "auto"' "$CONFIG_FILE")
   case "$t" in
-    chafa|chafaRaw|kitty|kitty-direct|iterm|sixel)
-      local info_width
-      info_width=$(fastfetch --logo-type none --pipe 2>/dev/null \
-        | sed $'s/\033\\[[0-9;]*m//g' \
-        | awk 'length > max { max = length } END { print max+0 }')
-      if [ -z "$info_width" ] || [ "$info_width" -lt 10 ]; then
-        cw=$(( cols > 80 ? cols * 45 / 100 : cols * 5 / 10 ))
-      else
-        local min_info=$(( cols * 35 / 100 ))
-        cw=$info_width
-        [ "$cw" -gt $(( cols - min_info - 4 )) ] && cw=$(( cols - min_info - 4 ))
-      fi
-      ch=$(( lines - 12 ))
-      [ "$cw" -lt 20 ] && cw=20; [ "$cw" -gt 80 ] && cw=80
-      [ "$ch" -lt 5 ]  && ch=5;  [ "$ch" -gt 40 ] && ch=40
-      jq_apply --argjson w "$cw" --argjson h "$ch" \
-        '.logo.width = $w | .logo.height = $h'
-      echo "  Fit: ${t} ${cw}x${ch} @ ${cols}x${lines} term" ;;
-    file|builtin)
-      lh=$(( lines - 15 ))
-      [ "$lh" -lt 5 ] && lh=5; [ "$lh" -gt 50 ] && lh=50
-      jq_apply --argjson h "$lh" 'del(.logo.width) | del(.logo.chafa) | .logo.height = $h'
-      echo "  Fit: height ${lh} @ ${cols}x${lines} term" ;;
+    file|builtin) ;;
+    *) return 1 ;;
   esac
+  src=$(jq -r '.logo.source // ""' "$CONFIG_FILE")
+  if [ -n "$src" ] && [ -f "$src" ]; then
+    cat "$src" || return 1
+    return 0
+  fi
+  # Builtin: fastfetch pads every logo line out to a fixed column, and starts
+  # the info text after that column, so the art is whatever is before it.
+  full=$(fastfetch --config "$CONFIG_FILE" --pipe 2>/dev/null | sed $'s/\033\\[[0-9;]*m//g') || return 1
+  info=$(fastfetch --config "$CONFIG_FILE" --logo-type none --pipe 2>/dev/null | sed $'s/\033\\[[0-9;]*m//g') || return 1
+  wi=$(printf '%s\n' "$info" | awk '{ if (length($0) > m) m = length($0) } END { print m+0 }')
+  wt=$(printf '%s\n' "$full" | awk '{ if (length($0) > m) m = length($0) } END { print m+0 }')
+  wl=$(( wt - wi ))
+  [ "$wl" -lt 2 ] && wl=2
+  printf '%s\n' "$full" | awk -v c="$wl" '{ sub(/[ \t\r]+$/, ""); print substr($0, 1, c) }'
+}
+
+# If the text logo + info text would overflow the current terminal, resize the
+# ASCII art down to fit and print the temp file holding the scaled copy.
+# Prints nothing when the logo already fits (native art, no color loss).
+scaled_logo_for_terminal() {
+  local lines cols t art info_width nw nh tw th tmp
+  lines=$(tput lines 2>/dev/null) || return 1
+  cols=$(tput cols 2>/dev/null) || return 1
+  t=$(jq -r '.logo.type // "auto"' "$CONFIG_FILE")
+  [ "$t" = file ] || [ "$t" = builtin ] || return 1
+  art=$(logo_art_text 2>/dev/null) || return 1
+  [ -n "$art" ] || return 1
+  nw=$(printf '%s\n' "$art" | awk '{ if (length($0) > m) m = length($0) } END { print m+0 }')
+  nh=$(printf '%s\n' "$art" | awk 'END { print NR }')
+  [ "$nh" -eq 0 ] && return 1
+
+  info_width=$(fastfetch --config "$CONFIG_FILE" --logo-type none --pipe 2>/dev/null \
+    | sed $'s/\033\\[[0-9;]*m//g' \
+    | awk 'length > max { max = length } END { print max+0 }')
+  [ -z "$info_width" ] || [ "$info_width" -lt 10 ] && info_width=$(( cols > 80 ? cols * 45 / 100 : cols * 5 / 10 ))
+  tw=$(( cols - info_width - 4 ))
+  [ "$tw" -lt 2 ] && tw=2
+  th=$(( lines - 15 ))
+  [ "$th" -lt 4 ] && th=4
+
+  # Downscale only when needed (never upscale), so the art stays crisp.
+  [ "$tw" -ge "$nw" ] && [ "$th" -ge "$nh" ] && return 1
+  tmp="${TMPDIR:-/tmp}/ff-logo-fit-${UID:-0}.txt"
+  printf '%s\n' "$art" | awk -v tw="$tw" -v th="$th" '
+    {
+      lines[NR] = $0
+      if (length($0) > nw) nw = length($0)
+    }
+    END {
+      n = NR; if (n < 1) exit 0
+      sx = nw / tw; sy = n / th
+      for (r = 0; r < th; r++) {
+        src = int(r * sy); if (src >= n) src = n - 1
+        L = lines[src + 1]; out = ""
+        for (c = 0; c < tw; c++) {
+          sc = int(c * sx)
+          out = out (sc < length(L) ? substr(L, sc + 1, 1) : " ")
+        }
+        sub(/[ \t]+$/, "", out)
+        print out
+      }
+    }' > "$tmp"
+  echo "$tmp"
+}
+
+set_logo_fit() {
+  local t dims cw ch
+  t=$(jq -r '.logo.type // "auto"' "$CONFIG_FILE")
+  if is_image_type "$t"; then
+    dims=$(logo_fit_dims 2>/dev/null || true)
+    [ -z "$dims" ] && return 0
+    read -r cw ch <<< "$dims"
+    apply_fit_dims "$cw" "$ch"
+    echo "  Fit: ${t} ${cw}x${ch} @ $(tput cols 2>/dev/null || echo 80)x$(tput lines 2>/dev/null || echo 40) term"
+  else
+    echo "  Text logos auto-resize to fit the terminal on every run."
+  fi
+}
+
+# Called by `ff` on every render: image logos are refit to a cell box matching
+# the CURRENT terminal size; text logos are downscaled when they would wrap.
+# Only acts when stdout is a terminal, then runs fastfetch.
+auto_fit_and_run() {
+  local t dims cw ch scaled
+  if [ -t 1 ]; then
+    t=$(jq -r '.logo.type // "auto"' "$CONFIG_FILE")
+    if is_image_type "$t"; then
+      dims=$(logo_fit_dims 2>/dev/null || true)
+      if [ -n "$dims" ]; then
+        read -r cw ch <<< "$dims"
+        apply_fit_dims "$cw" "$ch"
+      fi
+    elif [ "$t" = file ] || [ "$t" = builtin ]; then
+      scaled=$(scaled_logo_for_terminal 2>/dev/null || true)
+    fi
+  fi
+  if [ -n "$scaled" ] && [ -f "$scaled" ]; then
+    exec fastfetch --logo-type file --logo "$scaled" "$@"
+  fi
+  exec fastfetch "$@"
 }
 
 # Manual image size control. For image types, setting ONE dimension
@@ -693,26 +812,32 @@ get_osname() {
 set_osname_random() {
   local distros=(
     "Arch Linux" "Debian" "Fedora" "Ubuntu" "Gentoo" "openSUSE"
-    "Manjaro" "Pop!_OS" "NixOS" "Void Linux" "Slackware" "Alpine"
+    "Manjaro" "Pop!_OS" "NixOS" "Guix System" "Void Linux" "Slackware" "Alpine"
     "Artix" "Garuda" "EndeavourOS" "Solus" "Mint" "Zorin"
-    "Kali Linux" "Parrot OS" "Deepin" "Elementary" "FreeBSD"
-    "Red Hat" "CentOS" "Rocky Linux" "AlmaLinux" "Mageia"
-    "KDE neon" "Tails" "Qubes OS" "ArchBang" "LFS" "TempleOS"
+    "Kali Linux" "Parrot OS" "Deepin" "Elementary" "Red Hat"
+    "CentOS" "Rocky Linux" "AlmaLinux" "Mageia" "Oracle Linux"
+    "Amazon Linux" "Clear Linux" "openEuler" "Fedora Silverblue"
+    "KDE neon" "Tails" "Qubes OS" "ArchBang" "LFS" "Linux From Scratch" "TempleOS"
     "Bedrock" "ChromeOS" "Android" "SteamOS" "Proxmox"
     "MX Linux" "antiX" "Puppy Linux" "Tiny Core" "Knoppix"
+    "Nobara" "Bazzite" "ChimeraOS" "Vanilla OS" "Rhino Linux"
+    "Ultramarine" "Crystal Linux" "PCLinuxOS" "Q4OS" "Bodhi Linux"
+    "OpenMandriva" "ALT Linux" "ROSA" "Simply Linux" "Tuxedo OS"
+    "LMDE" "Whonix" "Endless OS" "postmarketOS" "Mobian"
     "macOS" "macOS Sequoia" "macOS Sonoma" "macOS Ventura"
     "Windows 11" "Windows 10" "Windows 7" "Windows XP"
     "Windows 98" "Windows 95" "Windows 3.1"
     "FreeBSD" "OpenBSD" "NetBSD" "DragonFly BSD" "TrueNAS"
+    "GhostBSD" "MidnightBSD" "NomadBSD"
     "HolyOS" "SerenityOS" "Haiku" "ReactOS" "SkyOS"
     "Solaris" "OpenIndiana" "illumos" "AIX" "HP-UX"
     "Plan 9" "9front" "Inferno" "Redox OS" "TOPS-20"
-    "TempleOS" "Collapse OS" "MenuetOS" "KolibriOS" "Visopsys"
+    "TempleOS" "Red Star OS" "Collapse OS" "MenuetOS" "KolibriOS" "Visopsys"
     "RISC OS" "AmigaOS" "AROS" "MorphOS" "OS/2"
     "eComStation" "BeOS" "Zeta" "Palm OS" "Symbian"
     "Fuchsia" "PureOS" "Raspberry Pi OS" "DietPi" "Ubuntu Core"
     "OpenWrt" "DD-WRT" "pfSense" "OPNsense" "Smoothwall"
-    "Devuan" "MX" "SparkyLinux" "Peppermint" "Lubuntu"
+    "Devuan" "SparkyLinux" "Peppermint" "Lubuntu"
     "Xubuntu" "Kubuntu" "Ubuntu MATE" "Ubuntu Budgie" "Ubuntu Studio"
     "KaOS" "Feren OS" "Netrunner" "Nitrux" "Mabox"
     "ArcoLinux" "CachyOS" "RebornOS" "ArchLabs" "Antergos"
@@ -1279,6 +1404,7 @@ Logo:
   logo width|height <n> Set one dimension (aspect ratio kept); "auto" resets
   Auto-detection: image sources render via Kitty in a kitty terminal, chafa
                 elsewhere; text files and built-in logos render as plain ASCII
+                The logo + info text auto-resize to your terminal window.
   color <slot> <c>      Set logo color slot (1-9), e.g. ff color 1 blue
   color list            Show logo color overrides
   color names           List all available color names
@@ -1308,8 +1434,6 @@ Other:
   backup remove <name>  Remove a backup
   clean [days]          Remove backups older than N days (default: 30)
   restore <name>        Restore a backup
-  diff [backup]         Show diff between current config and a backup
-  search <term>         Search modules and colors
   doctor|check          Check for common setup issues
   update [check] [testing]       Check for / install stable or testing updates
   version               Show version
@@ -1865,7 +1989,7 @@ case "${1:-}" in
     auto_image
     check_update_quiet
     [ "$FF_IS_IMAGE" -eq 1 ] && set -- "$@" --pipe false
-    exec fastfetch "$@" ;;
+    auto_fit_and_run "$@" ;;
 esac
 }
 main "$@"
@@ -1876,7 +2000,7 @@ FFSCRIPT
 
   cat > "$BIN_DIR/ff" << 'FFALIAS'
 #!/usr/bin/env bash
-exec fastfetch-config "$@"
+exec "$(dirname "$0")/fastfetch-config" "$@"
 FFALIAS
   chmod +x "$BIN_DIR/ff"
   ok "Installed ff alias -> $BIN_DIR/ff"
@@ -1993,7 +2117,8 @@ setup_path() {
   esac
   [ -z "$shell_rc" ] && return
 
-  local rc_file="$HOME/$shell_rc"
+  RC_FILE="$HOME/$shell_rc"
+  local rc_file="$RC_FILE"
   [ ! -f "$rc_file" ] && touch "$rc_file"
   if ! grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$rc_file" 2>/dev/null; then
     echo "" >> "$rc_file"
@@ -2049,7 +2174,7 @@ echo -e "    ff reset [name]         Reset config or single variable"
 echo -e "    ff status               Show current settings"
 echo ""
 echo -e "  ${YELLOW}To get started:${NC}"
-echo -e "    source ~/.\${shell_rc:-bashrc}     # reload PATH"
+echo -e "    source ${RC_FILE:-~/.bashrc}     # reload PATH"
 echo -e "    ff logo arch         # set a built-in logo"
 echo -e "    ff logo fit          # fit logo to terminal"
 echo ""
