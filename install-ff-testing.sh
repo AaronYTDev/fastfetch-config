@@ -133,73 +133,170 @@ BACKUP_DIR="$CONFIG_DIR/backups"
 
 # ── Color Map (120+ named colors) ───────────────────────────
 # Feel free to add your own!
-declare -gA C=(
-  [red]="#FF0000"          [darkred]="#8B0000"        [firebrick]="#B22222"
-  [indianred]="#CD5C5C"    [lightcoral]="#F08080"    [salmon]="#FA8072"
-  [darksalmon]="#E9967A"   [tomato]="#FF6347"        [coral]="#FF7F50"
-  [maroon]="#800000"       [brown]="#A52A2A"         [crimson]="#DC143C"
-  [lightsalmon]="#FFA07A"  [rosybrown]="#BC8F8F"     [mistyrose]="#FFE4E1"
-  [lavenderblush]="#FFF0F5"
+# Color data is kept as plain "name hex" lines so it works on Linux bash AND macOS's default bash 3.2 (which has no associative arrays).
+color_map() {
+  cat << 'COLORS'
+  red #FF0000
+  darkred #8B0000
+  firebrick #B22222
+  indianred #CD5C5C
+  lightcoral #F08080
+  salmon #FA8072
+  darksalmon #E9967A
+  tomato #FF6347
+  coral #FF7F50
+  maroon #800000
+  brown #A52A2A
+  crimson #DC143C
+  lightsalmon #FFA07A
+  rosybrown #BC8F8F
+  mistyrose #FFE4E1
+  lavenderblush #FFF0F5
+  darkorange #FF8C00
+  orange #FF8000
+  goldenrod #DAA520
+  darkgoldenrod #B8860B
+  gold #FFD700
+  peachpuff #FFDAB9
+  navajowhite #FFDEAD
+  khaki #F0E68C
+  darkkhaki #BDB76B
+  bisque #FFE4C4
+  blanchedalmond #FFEBCD
+  papayawhip #FFEFD5
+  moccasin #FFE4B5
+  palegoldenrod #EEE8AA
+  amber #FFBF00
+  yellow #FFFF00
+  lime #32CD32
+  darkgreen #006400
+  forestgreen #228B22
+  seagreen #2E8B57
+  darkseagreen #8FBC8F
+  mediumseagreen #3CB371
+  springgreen #00FF7F
+  mediumspringgreen #00FA9A
+  lawngreen #7CFC00
+  chartreuse #7FFF00
+  greenyellow #ADFF2F
+  yellowgreen #9ACD32
+  olivedrab #6B8E23
+  olive #808000
+  darkolivegreen #556B2F
+  lightgreen #90EE90
+  palegreen #98FB98
+  emerald #50C878
+  mint #98FF98
+  mediumaquamarine #66CDAA
+  aquamarine #7FFFD4
+  paleturquoise #AFEEEE
+  jade #00A86B
+  teal #008080
+  darkcyan #008B8B
+  lightseagreen #20B2AA
+  turquoise #40E0D0
+  mediumturquoise #48D1CC
+  darkturquoise #00CED1
+  cyan #00FFFF
+  lightcyan #E0FFFF
+  azure #F0FFFF
+  skobeloff #007474
+  cadetblue #5F9EA0
+  cerulean #007BA7
+  powderblue #B0E0E6
+  lightblue #ADD8E6
+  skyblue #87CEEB
+  lightskyblue #87CEFA
+  deepskyblue #00BFFF
+  dodgerblue #1E90FF
+  cornflowerblue #6495ED
+  royalblue #4169E1
+  blue #0000FF
+  mediumblue #0000CD
+  darkblue #00008B
+  navy #000080
+  midnightblue #191970
+  steelblue #4682B4
+  diamond #B9F2FF
+  lightsteelblue #B0C4DE
+  mediumslateblue #7B68EE
+  denim #1560BD
+  sapphire #0F52BA
+  indigo #4B0082
+  lavender #E6E6FA
+  thistle #D8BFD8
+  plum #DDA0DD
+  violet #EE82EE
+  orchid #DA70D6
+  mediumorchid #BA55D3
+  darkorchid #9932CC
+  darkviolet #9400D3
+  blueviolet #8A2BE2
+  mediumpurple #9370DB
+  purple #BF40BF
+  rebeccapurple #663399
+  slateblue #6A5ACD
+  darkslateblue #483D8B
+  lilac #C8A2C8
+  mauve #E0B0FF
+  pink #FFC0CB
+  hotpink #FF69B4
+  deeppink #FF1493
+  palevioletred #DB7093
+  mediumvioletred #C71585
+  ruby #E0115F
+  scarlet #FF2400
+  wine #722F37
+  sienna #A0522D
+  saddlebrown #8B4513
+  chocolate #D2691E
+  sandybrown #F4A460
+  peru #CD853F
+  tan #D2B48C
+  burlywood #DEB887
+  wheat #F5DEB3
+  pearl #EAE0C8
+  copper #B87333
+  taupe #483C32
+  beige #F5F5DC
+  ivory #FFFFF0
+  antiquewhite #FAEBD7
+  linen #FAF0E6
+  seashell #FFF5EE
+  honeydew #F0FFF0
+  oldlace #FDF5E6
+  floralwhite #FFFAF0
+  cornsilk #FFF8DC
+  lemonchiffon #FFFACD
+  lightgoldenrodyellow #FAFAD2
+  silver #C0C0C0
+  white #FFFFFF
+  snow #FFFAFA
+  whitesmoke #F5F5F5
+  ghostwhite #F8F8FF
+  aliceblue #F0F8FF
+  gainsboro #DCDCDC
+  lightgray #D3D3D3
+  darkgray #A9A9A9
+  gray #808080
+  dimgray #696969
+  darkslategray #2F4F4F
+  lightslategray #778899
+  charcoal #36454F
+  slategray #708090
+  black #000000
+  magenta #FF00FF
+  darkmagenta #8B008B
+COLORS
+}
+color_hex() {
+  local name="$1" n h
+  while read -r n h; do
+    [ "$n" = "$name" ] && { echo "$h"; return 0; }
+  done < <(color_map)
+  return 1
+}
 
-  [darkorange]="#FF8C00"   [orange]="#FF8000"        [goldenrod]="#DAA520"
-  [darkgoldenrod]="#B8860B" [gold]="#FFD700"         [peachpuff]="#FFDAB9"
-  [navajowhite]="#FFDEAD"  [khaki]="#F0E68C"         [darkkhaki]="#BDB76B"
-  [bisque]="#FFE4C4"       [blanchedalmond]="#FFEBCD" [papayawhip]="#FFEFD5"
-  [moccasin]="#FFE4B5"     [palegoldenrod]="#EEE8AA"  [amber]="#FFBF00"
-  [yellow]="#FFFF00"
-
-  [lime]="#32CD32"         [darkgreen]="#006400"     [forestgreen]="#228B22"
-  [seagreen]="#2E8B57"     [darkseagreen]="#8FBC8F"  [mediumseagreen]="#3CB371"
-  [springgreen]="#00FF7F"  [mediumspringgreen]="#00FA9A" [lawngreen]="#7CFC00"
-  [chartreuse]="#7FFF00"   [greenyellow]="#ADFF2F"   [yellowgreen]="#9ACD32"
-  [olivedrab]="#6B8E23"    [olive]="#808000"         [darkolivegreen]="#556B2F"
-  [lightgreen]="#90EE90"   [palegreen]="#98FB98"     [emerald]="#50C878"
-  [mint]="#98FF98"          [mediumaquamarine]="#66CDAA" [aquamarine]="#7FFFD4"
-  [paleturquoise]="#AFEEEE" [jade]="#00A86B"
-
-  [teal]="#008080"         [darkcyan]="#008B8B"      [lightseagreen]="#20B2AA"
-  [turquoise]="#40E0D0"    [mediumturquoise]="#48D1CC" [darkturquoise]="#00CED1"
-  [cyan]="#00FFFF"         [lightcyan]="#E0FFFF"     [azure]="#F0FFFF"
-  [skobeloff]="#007474"    [cadetblue]="#5F9EA0"      [cerulean]="#007BA7"
-
-  [powderblue]="#B0E0E6"   [lightblue]="#ADD8E6"     [skyblue]="#87CEEB"
-  [lightskyblue]="#87CEFA" [deepskyblue]="#00BFFF"   [dodgerblue]="#1E90FF"
-  [cornflowerblue]="#6495ED" [royalblue]="#4169E1"   [blue]="#0000FF"
-  [mediumblue]="#0000CD"   [darkblue]="#00008B"      [navy]="#000080"
-  [midnightblue]="#191970" [steelblue]="#4682B4"     [diamond]="#B9F2FF"
-  [lightsteelblue]="#B0C4DE" [mediumslateblue]="#7B68EE" [denim]="#1560BD"
-  [sapphire]="#0F52BA"
-
-  [indigo]="#4B0082"       [lavender]="#E6E6FA"      [thistle]="#D8BFD8"
-  [plum]="#DDA0DD"         [violet]="#EE82EE"        [orchid]="#DA70D6"
-  [mediumorchid]="#BA55D3" [darkorchid]="#9932CC"    [darkviolet]="#9400D3"
-  [blueviolet]="#8A2BE2"   [mediumpurple]="#9370DB"  [purple]="#BF40BF"
-  [rebeccapurple]="#663399" [slateblue]="#6A5ACD"    [darkslateblue]="#483D8B"
-  [lilac]="#C8A2C8"        [mauve]="#E0B0FF"
-
-  [pink]="#FFC0CB"         [hotpink]="#FF69B4"       [deeppink]="#FF1493"
-  [palevioletred]="#DB7093" [mediumvioletred]="#C71585"
-  [ruby]="#E0115F"          [scarlet]="#FF2400"       [wine]="#722F37"
-
-  [sienna]="#A0522D"       [saddlebrown]="#8B4513"   [chocolate]="#D2691E"
-  [sandybrown]="#F4A460"   [peru]="#CD853F"          [tan]="#D2B48C"
-  [burlywood]="#DEB887"    [wheat]="#F5DEB3"         [pearl]="#EAE0C8"
-  [copper]="#B87333"       [taupe]="#483C32"
-
-  [beige]="#F5F5DC"        [ivory]="#FFFFF0"         [antiquewhite]="#FAEBD7"
-  [linen]="#FAF0E6"        [seashell]="#FFF5EE"      [honeydew]="#F0FFF0"
-  [oldlace]="#FDF5E6"      [floralwhite]="#FFFAF0"   [cornsilk]="#FFF8DC"
-  [lemonchiffon]="#FFFACD" [lightgoldenrodyellow]="#FAFAD2" [silver]="#C0C0C0"
-
-  [white]="#FFFFFF"        [snow]="#FFFAFA"          [whitesmoke]="#F5F5F5"
-  [ghostwhite]="#F8F8FF"   [aliceblue]="#F0F8FF"     [gainsboro]="#DCDCDC"
-  [lightgray]="#D3D3D3"    [darkgray]="#A9A9A9"      [gray]="#808080"
-  [dimgray]="#696969"      [darkslategray]="#2F4F4F" [lightslategray]="#778899"
-  [charcoal]="#36454F"
-  [slategray]="#708090"    [black]="#000000"
-
-  [magenta]="#FF00FF"      [darkmagenta]="#8B008B"
-)
 
 # ── Utility functions ────────────────────────────────────────
 CLEANUP_FILES=()
@@ -244,14 +341,14 @@ _tui_sep() {
 _tui_row() {
   local text="$1"
   local stripped; stripped=$(echo -e "$text" | sed $'s/\033\\[[0-9;]*[a-zA-Z]//g')
-  local tw; tw=$(printf '%s' "$stripped" | wc -L | tr -d ' ')
+  local tw; tw=$(printf '%s\n' "$stripped" | awk '{ if (length > max) max = length } END { print max+0 }')
   local pad=$(( TUI_W - 2 - tw ))
   printf "${C_CYAN_B}║${C_RST}%b%*s${C_CYAN_B}║${C_RST}\n" "$text" "$pad" ""
 }
 _tui_center() {
   local text="$1"
   local stripped; stripped=$(echo -e "$text" | sed $'s/\033\\[[0-9;]*[a-zA-Z]//g')
-  local tw; tw=$(printf '%s' "$stripped" | wc -L | tr -d ' ')
+  local tw; tw=$(printf '%s\n' "$stripped" | awk '{ if (length > max) max = length } END { print max+0 }')
   local inner=$(( TUI_W - 2 ))
   local lp=$(( (inner - tw) / 2 ))
   local rp=$(( inner - tw - lp ))
@@ -298,7 +395,19 @@ version_lt() {
   local v1="$1" v2="$2"
   v1="${v1#[Vv]}"; v2="${v2#[Vv]}"
   v1="${v1%%-*}";  v2="${v2%%-*}"
-  [ "$(printf '%s\n' "$v1" "$v2" | sort -V | head -1)" = "$v1" ] && [ "$v1" != "$v2" ]
+  [ "$v1" = "$v2" ] && return 1
+  local result
+  result=$(awk -v a="$v1" -v b="$v2" 'BEGIN {
+    na = split(a, aa, "."); nb = split(b, bb, ".")
+    n = (na > nb) ? na : nb
+    for (i = 1; i <= n; i++) {
+      x = sprintf("%09d", aa[i] + 0); y = sprintf("%09d", bb[i] + 0)
+      if (x < y) { print "lt"; exit }
+      if (x > y) { print "gt"; exit }
+    }
+    print "eq"
+  }')
+  [ "$result" = "lt" ]
 }
 
 # ── Default config ───────────────────────────────────────────
@@ -333,7 +442,8 @@ reset_config() {
 # ── Color resolution ─────────────────────────────────────────
 resolve_color() {
   local key; key=$(echo "$1" | tr '[:upper:]' '[:lower:]')
-  echo "${C[$key]:-$1}"
+  local v; v=$(color_hex "$key" || true)
+  echo "${v:-$1}"
 }
 
 # ── Logo ─────────────────────────────────────────────────────
@@ -409,7 +519,7 @@ set_logo_fit() {
     chafa|chafaRaw|kitty|kitty-direct|iterm|sixel)
       local info_width
       info_width=$(fastfetch --logo-type none --pipe 2>/dev/null \
-        | sed 's/\x1b\[[0-9;]*m//g' \
+        | sed $'s/\033\\[[0-9;]*m//g' \
         | awk 'length > max { max = length } END { print max+0 }')
       if [ -z "$info_width" ] || [ "$info_width" -lt 10 ]; then
         cw=$(( cols > 80 ? cols * 45 / 100 : cols * 5 / 10 ))
@@ -660,17 +770,19 @@ set_color() {
 reset_colors() { jq_apply '.logo.color = {}'; echo "All logo color overrides cleared"; }
 
 list_color_names() {
-  for key in "${!C[@]}"; do echo "$key"; done | sort
+  color_map | awk '{print $1}' | sort
 }
 
 search_colors() {
   local term="$1" key found=0
-  for key in "${!C[@]}"; do
+  while read -r key _; do
     if echo "$key" | grep -qi "$term"; then
       echo "$key"; found=1
     fi
-  done
-  [ "$found" -eq 0 ] && echo "No colors matching '$term'"
+  done < <(color_map)
+  if [ "$found" -eq 0 ]; then
+    echo "No colors matching '$term'"
+  fi
 }
 
 # ── Modules ──────────────────────────────────────────────────
@@ -926,7 +1038,9 @@ search_config() {
       fi
     done < <(echo "$cols")
   fi
-  [ "$found" -eq 0 ] && echo "  No matches found"
+  if [ "$found" -eq 0 ]; then
+    echo "  No matches found"
+  fi
 }
 
 # ── Self-update ──────────────────────────────────────────────
@@ -1180,7 +1294,7 @@ OS:
   osname-logo <n> [l]   Set OS name and logo (one arg sets both)
 
 Modules:
-  module                List all modules
+  module|variable       List all modules
   module add <name>     Add a module (inserted at default pos)
   module remove <name>  Remove a module from the config
   module move <name> <pos> Move a module to position (1-based)
@@ -1606,7 +1720,7 @@ case "${1:-}" in
     [ -z "${2:-}" ] && { echo "Usage: fastfetch-config osname-logo <name> [logoname]"; exit 1; }
     [ -z "${3:-}" ] && { set_osname "$2"; set_logo "$2"; } || { set_osname "$2"; set_logo "$3"; } ;;
   list-logos|list|ls)
-    fastfetch --print-logos 2>&1 | head -100; echo
+    fastfetch --print-logos 2>&1 | head -100 || true; echo
     if ls -A "$LOGOS_DIR" &>/dev/null; then
       echo "Custom logos in $LOGOS_DIR:"; ls "$LOGOS_DIR"
     fi ;;
@@ -1683,7 +1797,7 @@ case "${1:-}" in
   search)
     [ -z "${2:-}" ] && { echo "Usage: fastfetch-config search <term>"; exit 1; }
     search_config "$2" ;;
-  module|var)
+  module|var|variable)
     case "${2:-}" in
       list|"") echo "Current modules:"; list_modules ;;
       add)     [ -z "${3:-}" ] && { echo "Usage: fastfetch-config module add <name>"; exit 1; }
