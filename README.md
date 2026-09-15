@@ -16,4 +16,4 @@ To install the testing version, use this:
 `curl -fsSL https://raw.githubusercontent.com/AaronYTDev/fastfetch-config/main/install-ff-testing.sh | bash`
 
 # Everything else
-Wiki [here](https://ff-iwiki.netlify.app/#troubleshooting)
+Wiki [here](https://ff-iwiki.netlify.app)
