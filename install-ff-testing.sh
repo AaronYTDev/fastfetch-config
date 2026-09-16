@@ -514,7 +514,7 @@ set_logo() {
 }
 
 logo_fit_dims() {
-  local lines cols t info_width cw ch
+  local lines="" cols="" t="" info_width="" cw="" ch=""
   lines=$(tput lines 2>/dev/null) || return 1
   cols=$(tput cols 2>/dev/null) || return 1
   t=$(jq -r '.logo.type // "auto"' "$CONFIG_FILE")
@@ -553,7 +553,7 @@ apply_fit_dims() {
 # Raw ASCII logo art for the CURRENT text logo (a file source is read directly;
 # a builtin is extracted from fastfetch's own render). Prints the art or fails.
 logo_art_text() {
-  local t src full info wi wt wl
+  local t="" src="" full="" info="" wi="" wt="" wl=""
   t=$(jq -r '.logo.type // "auto"' "$CONFIG_FILE")
   case "$t" in
     file|builtin) ;;
@@ -579,7 +579,7 @@ logo_art_text() {
 # ASCII art down to fit and print the temp file holding the scaled copy.
 # Prints nothing when the logo already fits (native art, no color loss).
 scaled_logo_for_terminal() {
-  local lines cols t art info_width nw nh tw th tmp
+  local lines="" cols="" t="" art="" info_width="" nw="" nh="" tw="" th="" tmp=""
   lines=$(tput lines 2>/dev/null) || return 1
   cols=$(tput cols 2>/dev/null) || return 1
   t=$(jq -r '.logo.type // "auto"' "$CONFIG_FILE")
@@ -625,7 +625,7 @@ scaled_logo_for_terminal() {
 }
 
 set_logo_fit() {
-  local t dims cw ch
+  local t="" dims="" cw="" ch=""
   t=$(jq -r '.logo.type // "auto"' "$CONFIG_FILE")
   if is_image_type "$t"; then
     dims=$(logo_fit_dims 2>/dev/null || true)
@@ -642,7 +642,7 @@ set_logo_fit() {
 # the CURRENT terminal size; text logos are downscaled when they would wrap.
 # Only acts when stdout is a terminal, then runs fastfetch.
 auto_fit_and_run() {
-  local t dims cw ch scaled
+  local t="" dims="" cw="" ch="" scaled=""
   if [ -t 1 ]; then
     t=$(jq -r '.logo.type // "auto"' "$CONFIG_FILE")
     if is_image_type "$t"; then
