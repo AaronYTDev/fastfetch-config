@@ -318,6 +318,7 @@ C_DIM='\033[2m'; C_UNDER='\033[4m'
 C_CYAN_B='\033[1;36m'; C_GREEN_B='\033[1;32m'; C_MAGENTA='\033[0;35m'
 C_MAGENTA_B='\033[1;35m'; C_BLUE='\033[0;34m'; C_WHITE='\033[1;37m'
 C_BG_BLUE='\033[44m'; C_BG_CYAN='\033[46m'
+C_RED_B='\033[1;31m'; C_YELLOW_B='\033[1;33m'
 info()  { echo -e "${C_CYAN}::${C_RST} $1"; }
 warn()  { echo -e "${C_YELLOW}::${C_RST} $1"; }
 ok()    { echo -e "${C_GREEN}::${C_RST} $1"; }
@@ -463,19 +464,28 @@ _set_logo_type() {
   set_logo_fit
 }
 
+# Copies a logo/image into the logos dir unless it already lives there, so
+# `ff logo ~/.config/fastfetch/logos/x.png` doesn't blow up on itself.
+# Prints the destination path.
+copy_logo_into_dir() {
+  local src="$1" dest="$LOGOS_DIR/$(basename "$1")"
+  [ "$src" -ef "$dest" ] || cp -f "$src" "$dest" || { echo "Could not copy $src" >&2; return 1; }
+  echo "$dest"
+}
+
 _set_image_type() {
   local t="$1" name="${2:-}"
   if [ "$t" = "kitty" ] || [ "$t" = "kitty-direct" ]; then
     in_kitty || warn "Kitty protocol needs a Kitty terminal — it will fall back elsewhere"
   fi
   if [ -n "$name" ]; then
-    local logo_path="$LOGOS_DIR/$(basename "$name")"
-    cp "$name" "$logo_path"
-    _set_logo_type "$t" "$logo_path"
+    local logo_path
+    logo_path=$(copy_logo_into_dir "$name") || return 1
     echo "$t image rendering enabled with image: $name"
+    _set_logo_type "$t" "$logo_path"
   else
-    _set_logo_type "$t"
     echo "$t image rendering enabled"
+    _set_logo_type "$t"
   fi
 }
 
@@ -501,8 +511,8 @@ set_logo() {
     jq_apply '.logo.type = "auto" | .logo.source = ""'
     echo "Logo set to auto-detection"
   elif [ -f "$name" ]; then
-    local logo_path="$LOGOS_DIR/$(basename "$name")"
-    cp "$name" "$logo_path"
+    local logo_path
+    logo_path=$(copy_logo_into_dir "$name") || return 1
     set_logo_type_by_ext "$logo_path" "$name" "$preferred"
   elif [ -f "$LOGOS_DIR/$name" ]; then
     set_logo_type_by_ext "$LOGOS_DIR/$name" "$name" "$preferred"
@@ -1008,7 +1018,7 @@ toggle_module() {
 }
 
 show_diag() {
-  local r=""; r="$r$(need_jq 2>&1 >/dev/null && echo "jq: $(jq --version 2>/dev/null || echo '?')" || echo "jq: NOT FOUND")"
+  local r=""; r="$r$(command -v jq &>/dev/null && echo "jq: $(jq --version 2>/dev/null || echo '?')" || echo "jq: NOT FOUND")"
   r="$r\nfastfetch: $(fastfetch --version 2>/dev/null || echo 'NOT FOUND')"
   r="$r\nConfig: $CONFIG_FILE ($([ -f "$CONFIG_FILE" ] && echo 'exists' || echo 'MISSING'))"
   r="$r\nLogos: $LOGOS_DIR ($([ -d "$LOGOS_DIR" ] && echo "$(ls "$LOGOS_DIR" 2>/dev/null | wc -l) files" || echo 'MISSING'))"
@@ -1486,7 +1496,7 @@ tui_backup() {
     echo -e "  ${C_GREEN_B}2)${C_RST}  List backups"
     echo -e "  ${C_GREEN_B}3)${C_RST}  Restore backup"
     echo -e "  ${C_GREEN_B}4)${C_RST}  Remove backup"
-    echo -e "  ${C_RED_B:-${C_RED}}5)${C_RST}  Back"
+    echo -e "  ${C_RED_B}5)${C_RST}  Back"
     echo ""
     _tui_bot
     echo ""
@@ -1515,7 +1525,7 @@ tui_modules() {
     echo -e "  ${C_GREEN_B}3)${C_RST}  Move a module"
     echo -e "  ${C_GREEN_B}4)${C_RST}  Set module property"
     echo -e "  ${C_GREEN_B}5)${C_RST}  Easy set (key + format)"
-    echo -e "  ${C_RED_B:-${C_RED}}6)${C_RST}  Back"
+    echo -e "  ${C_RED_B}6)${C_RST}  Back"
     echo ""
     _tui_bot
     echo ""
@@ -1565,7 +1575,7 @@ tui_chafa() {
     echo -e "  ${C_GREEN_B}6)${C_RST}  Enable kitty with image"
     echo -e "  ${C_GREEN_B}7)${C_RST}  Disable image rendering"
     echo -e "  ${C_GREEN_B}8)${C_RST}  Re-fit to terminal"
-    echo -e "  ${C_RED_B:-${C_RED}}9)${C_RST}  Back"
+    echo -e "  ${C_RED_B}9)${C_RST}  Back"
     echo ""
     _tui_bot
     echo ""
@@ -1644,9 +1654,9 @@ tui_reset() {
     _tui_sep "─"
     echo -e "  ${C_DIM}Modules: $(list_modules | tr '\n' ' ')${C_RST}"
     echo ""
-    echo -e "  ${C_RED_B:-${C_RED}}1)${C_RST}  Reset entire config"
-    echo -e "  ${C_YELLOW_B:-${C_YELLOW}}2)${C_RST}  Reset a single module"
-    echo -e "  ${C_RED_B:-${C_RED}}3)${C_RST}  Back"
+    echo -e "  ${C_RED_B}1)${C_RST}  Reset entire config"
+    echo -e "  ${C_YELLOW_B}2)${C_RST}  Reset a single module"
+    echo -e "  ${C_RED_B}3)${C_RST}  Back"
     echo ""
     _tui_bot
     echo ""
@@ -1688,7 +1698,7 @@ tui_menu() {
        9|b|backup) tui_backup ;;
        l|L|gallery) gallery ;;
       a|h|help) clear; usage; echo; read -p "Press enter..." _ ;;
-      0|q|exit) clear; echo -e "${C_GREEN}Goodbye!${C_RST}"; echo; ff config 2>/dev/null || true; break ;;
+      0|q|exit) clear; echo -e "${C_GREEN}Goodbye!${C_RST}"; echo; ff 2>/dev/null || true; break ;;
       f|F) echo -e "${C_MAGENTA_B}F's in the chat. Press enter...${C_RST}"; read -r _ ;;
       *) echo -e "${C_RED}Invalid option${C_RST}"; sleep 1 ;;
     esac
@@ -1814,183 +1824,191 @@ gallery() {
 
 # ── Main dispatch ────────────────────────────────────────────
 main() {
-need_jq
-mkdir -p "$LOGOS_DIR" "$BACKUP_DIR"
-[ -f "$CONFIG_FILE" ] || {
-  gen_default_config > "$CONFIG_FILE"
-  echo "Created default config at $CONFIG_FILE"
-}
+  need_jq
+  mkdir -p "$LOGOS_DIR" "$BACKUP_DIR"
+  [ -f "$CONFIG_FILE" ] || {
+    gen_default_config > "$CONFIG_FILE"
+    echo "Created default config at $CONFIG_FILE"
+  }
 
-case "${1:-}" in
-  logo)
-    case "${2:-}" in
-      fit) set_logo_fit ;;
-      preview|show|info) preview_logo ;;
-      width)    logo_width "${3:-}" ;;
-      height)   logo_height "${3:-}" ;;
-      size)     set_logo_size "${3:-}" "${4:-}" ;;
-      install) install_custom_logos ;;
-      random|rand) echo "Use 'ff os random' for random OS names instead." ;;
-      "")  echo "Current logo: $(get_logo)" ;;
-      *)   set_logo "$2" "${3:-}" ;;
-    esac ;;
-  os|osname)
-    case "${2:-}" in
-      random|rand) set_osname_random ;;
-      "")  echo "Current OS name: $(get_osname)" ;;
-      *)   set_osname "$2" ;;
-    esac ;;
-  osname-logo)
-    [ -z "${2:-}" ] && { echo "Usage: fastfetch-config osname-logo <name> [logoname]"; exit 1; }
-    [ -z "${3:-}" ] && { set_osname "$2"; set_logo "$2"; } || { set_osname "$2"; set_logo "$3"; } ;;
-  list-logos|list|ls)
-    fastfetch --print-logos 2>&1 | head -100 || true; echo
-    if ls -A "$LOGOS_DIR" &>/dev/null; then
-      echo "Custom logos in $LOGOS_DIR:"; ls "$LOGOS_DIR"
-    fi ;;
-  color)
-    case "${2:-}" in
-      list)
-        cols=$(get_colors)
-        echo "Current logo color overrides:"
-        [ -z "$cols" ] && echo "  (none set)" || echo "$cols" ;;
-      names|list-names) list_color_names ;;
-      search) [ -z "${3:-}" ] && { echo "Usage: fastfetch-config color search <term>"; exit 1; }
-              search_colors "$3" ;;
-      reset) reset_colors ;;
-      *)
-        [ -z "${2:-}" ] || [ -z "${3:-}" ] && { echo "Usage: fastfetch-config color <slot(1-9)> <color>"; echo "       fastfetch-config color list"; echo "       fastfetch-config color reset"; exit 1; }
-        set_color "$2" "$3" ;;
-    esac ;;
-  chafa)
-    case "${2:-}" in
-      on|enable)        set_chafa on "${3:-}" ;;
-      raw|chafaRaw)     set_chafa raw "${3:-}" ;;
-      fit|refit)        set_logo_fit ;;
-      size)             set_logo_size "${3:-}" "${4:-}" ;;
-      off|disable|auto) set_chafa off ;;
-      "")
-        echo "Image: $(get_image)"
-        echo "Usage: fastfetch-config chafa [on|off|raw|fit|size] [image-file]"
-        echo "  on [file]   Enable chafa (optionally with an image)"
-        echo "  raw [file]  Enable chafa raw mode (optionally with an image)"
-        echo "  fit         Re-fit chafa to terminal size"
-        echo "  size <WxH>  Set exact image size in cells (size auto to reset)"
-        echo "  off         Disable chafa, revert to auto" ;;
-      *) echo "Unknown option: $2"; echo "Usage: fastfetch-config chafa [on|off|raw|fit|size] [image-file]" ;;
-    esac ;;
-  kitty)
-    case "${2:-}" in
-      on|enable)           set_kitty on "${3:-}" ;;
-      direct|kitty-direct) set_kitty direct "${3:-}" ;;
-      size)                set_logo_size "${3:-}" "${4:-}" ;;
-      off|disable|auto)    set_kitty off ;;
-      "")
-        echo "Kitty: $(get_kitty)"
-        echo "Usage: fastfetch-config kitty [on|direct|off|size] [image-file]"
-        echo "  on [file]      Render with the Kitty graphics protocol (optionally an image)"
-        echo "  direct [file]  Render with Kitty in direct mode"
-        echo "  size <WxH>     Set exact image size in cells (size auto to reset)"
-        echo "  off            Disable image rendering, revert to auto" ;;
-      *) echo "Unknown option: $2"; echo "Usage: fastfetch-config kitty [on|direct|off|size] [image-file]" ;;
-    esac ;;
-  image)
-    case "${2:-}" in
-      on|enable)        set_chafa on "${3:-}" ;;
-      raw)              set_chafa raw "${3:-}" ;;
-      off|disable|auto) set_chafa off ;;
-      status|"")        echo "Image rendering: $(get_image)" ;;
-      *) echo "Unknown option: $2"; echo "Usage: fastfetch-config image [on|raw|off] [image-file]" ;;
-    esac ;;
-  status)
-    echo "Fastfetch config: $CONFIG_FILE"
-    echo "Logo: $(get_logo)"
-    echo "Image: $(get_image)"
-    echo "OS name: $(get_osname)"
-    echo "Custom logos dir: $LOGOS_DIR"
-    cols=$(get_colors)
-    [ -n "$cols" ] && { echo "Logo colors:"; echo "$cols" | sed 's/^/  /'; }
-    echo "Modules: $(list_modules | tr '\n' ' ')" ;;
-  stats|info) show_stats ;;
-  clean)
-    days="${2:-30}"
-    is_numeric "$days" || { echo "Error: days must be a positive integer"; exit 1; }
-    clean_backups "$days" ;;
-  diff)
-    diff_config "${2:-}" ;;
-  search)
-    [ -z "${2:-}" ] && { echo "Usage: fastfetch-config search <term>"; exit 1; }
-    search_config "$2" ;;
-  module|var|variable)
-    case "${2:-}" in
-      list|"") echo "Current modules:"; list_modules ;;
-      add)     [ -z "${3:-}" ] && { echo "Usage: fastfetch-config module add <name>"; exit 1; }
-               add_module "$3" ;;
-      remove|rm) [ -z "${3:-}" ] && { echo "Usage: fastfetch-config module remove <name>"; exit 1; }
-                 remove_module "$3" ;;
-      move|mv|reorder)
-        [ -z "${3:-}" ] || [ -z "${4:-}" ] && { echo "Usage: fastfetch-config module move <name> <position>"; exit 1; }
-        is_numeric "$4" || { echo "Error: position must be a positive integer"; exit 1; }
-        move_module "$3" "$4" ;;
-      set)   [ -z "${3:-}" ] || [ -z "${4:-}" ] || [ -z "${5:-}" ] && { echo "Usage: fastfetch-config module set <name> <key> <value>"; exit 1; }
-             set_module "$3" "$4" "$5" ;;
-      eset)  [ -z "${3:-}" ] || [ -z "${4:-}" ] && { echo "Usage: fastfetch-config module eset <keyname> <formatname>"; exit 1; }
-             local nlow; nlow=$(echo "$3" | tr '[:upper:]' '[:lower:]')
-             [ "$(module_exists "$nlow")" -eq 0 ] && { echo "Module '$3' not found"; exit 1; }
-             set_module "$nlow" "key" "$3"
-             set_module "$nlow" "format" "$4"
-             echo "Easy-set complete: $3 -> $4" ;;
-      reset)
-        if [ "${3:-}" = "all" ]; then
+  case "${1:-}" in
+    logo)
+      case "${2:-}" in
+        fit) set_logo_fit ;;
+        preview|show|info) preview_logo ;;
+        width)    logo_width "${3:-}" ;;
+        height)   logo_height "${3:-}" ;;
+        size)     set_logo_size "${3:-}" "${4:-}" ;;
+        install) install_custom_logos ;;
+        random|rand) echo "Use 'ff os random' for random OS names instead." ;;
+        "")  echo "Current logo: $(get_logo)" ;;
+        *)   set_logo "$2" "${3:-}" ;;
+      esac ;;
+    os|osname)
+      case "${2:-}" in
+        random|rand) set_osname_random ;;
+        "")  echo "Current OS name: $(get_osname)" ;;
+        *)   set_osname "$2" ;;
+      esac ;;
+    osname-logo)
+      [ -z "${2:-}" ] && { echo "Usage: fastfetch-config osname-logo <name> [logoname]"; exit 1; }
+      [ -z "${3:-}" ] && { set_osname "$2"; set_logo "$2"; } || { set_osname "$2"; set_logo "$3"; } ;;
+    list-logos|list|ls)
+      fastfetch --print-logos 2>&1 | head -100 || true; echo
+      if ls -A "$LOGOS_DIR" &>/dev/null; then
+        echo "Custom logos in $LOGOS_DIR:"; ls "$LOGOS_DIR"
+      fi ;;
+    color)
+      case "${2:-}" in
+        list)
+          cols=$(get_colors)
+          echo "Current logo color overrides:"
+          [ -z "$cols" ] && echo "  (none set)" || echo "$cols" ;;
+        names|list-names) list_color_names ;;
+        search) [ -z "${3:-}" ] && { echo "Usage: fastfetch-config color search <term>"; exit 1; }
+                search_colors "$3" ;;
+        reset) reset_colors ;;
+        *)
+          [ -z "${2:-}" ] || [ -z "${3:-}" ] && { echo "Usage: fastfetch-config color <slot(1-9)> <color>"; echo "       fastfetch-config color list"; echo "       fastfetch-config color reset"; exit 1; }
+          set_color "$2" "$3" ;;
+      esac ;;
+    chafa)
+      case "${2:-}" in
+        on|enable)        set_chafa on "${3:-}" ;;
+        raw|chafaRaw)     set_chafa raw "${3:-}" ;;
+        fit|refit)        set_logo_fit ;;
+        size)             set_logo_size "${3:-}" "${4:-}" ;;
+        off|disable|auto) set_chafa off ;;
+        "")
+          echo "Image: $(get_image)"
+          echo "Usage: fastfetch-config chafa [on|off|raw|fit|size] [image-file]"
+          echo "  on [file]   Enable chafa (optionally with an image)"
+          echo "  raw [file]  Enable chafa raw mode (optionally with an image)"
+          echo "  fit         Re-fit chafa to terminal size"
+          echo "  size <WxH>  Set exact image size in cells (size auto to reset)"
+          echo "  off         Disable chafa, revert to auto" ;;
+        *) echo "Unknown option: $2"; echo "Usage: fastfetch-config chafa [on|off|raw|fit|size] [image-file]" ;;
+      esac ;;
+    kitty)
+      case "${2:-}" in
+        on|enable)           set_kitty on "${3:-}" ;;
+        direct|kitty-direct) set_kitty direct "${3:-}" ;;
+        size)                set_logo_size "${3:-}" "${4:-}" ;;
+        off|disable|auto)    set_kitty off ;;
+        "")
+          echo "Kitty: $(get_kitty)"
+          echo "Usage: fastfetch-config kitty [on|direct|off|size] [image-file]"
+          echo "  on [file]      Render with the Kitty graphics protocol (optionally an image)"
+          echo "  direct [file]  Render with Kitty in direct mode"
+          echo "  size <WxH>     Set exact image size in cells (size auto to reset)"
+          echo "  off            Disable image rendering, revert to auto" ;;
+        *) echo "Unknown option: $2"; echo "Usage: fastfetch-config kitty [on|direct|off|size] [image-file]" ;;
+      esac ;;
+    image)
+      case "${2:-}" in
+        on|enable)        set_chafa on "${3:-}" ;;
+        raw)              set_chafa raw "${3:-}" ;;
+        off|disable|auto) set_chafa off ;;
+        status|"")        echo "Image rendering: $(get_image)" ;;
+        *) echo "Unknown option: $2"; echo "Usage: fastfetch-config image [on|raw|off] [image-file]" ;;
+      esac ;;
+    status)
+      echo "Fastfetch config: $CONFIG_FILE"
+      echo "Logo: $(get_logo)"
+      echo "Image: $(get_image)"
+      echo "OS name: $(get_osname)"
+      echo "Custom logos dir: $LOGOS_DIR"
+      cols=$(get_colors)
+      [ -n "$cols" ] && { echo "Logo colors:"; echo "$cols" | sed 's/^/  /'; }
+      echo "Modules: $(list_modules | tr '\n' ' ')" ;;
+    stats|info) show_stats ;;
+    clean)
+      days="${2:-30}"
+      is_numeric "$days" || { echo "Error: days must be a positive integer"; exit 1; }
+      clean_backups "$days" ;;
+    diff)
+      diff_config "${2:-}" ;;
+    search)
+      [ -z "${2:-}" ] && { echo "Usage: fastfetch-config search <term>"; exit 1; }
+      search_config "$2" ;;
+    module|var|variable)
+      case "${2:-}" in
+        list|"") echo "Current modules:"; list_modules ;;
+        add)     [ -z "${3:-}" ] && { echo "Usage: fastfetch-config module add <name>"; exit 1; }
+                 add_module "$3" ;;
+        remove|rm) [ -z "${3:-}" ] && { echo "Usage: fastfetch-config module remove <name>"; exit 1; }
+                   remove_module "$3" ;;
+        move|mv|reorder)
+          [ -z "${3:-}" ] || [ -z "${4:-}" ] && { echo "Usage: fastfetch-config module move <name> <position>"; exit 1; }
+          is_numeric "$4" || { echo "Error: position must be a positive integer"; exit 1; }
+          move_module "$3" "$4" ;;
+        set)   [ -z "${3:-}" ] || [ -z "${4:-}" ] || [ -z "${5:-}" ] && { echo "Usage: fastfetch-config module set <name> <key> <value>"; exit 1; }
+               set_module "$3" "$4" "$5" ;;
+        eset)  [ -z "${3:-}" ] || [ -z "${4:-}" ] && { echo "Usage: fastfetch-config module eset <keyname> <formatname>"; exit 1; }
+               local nlow; nlow=$(echo "$3" | tr '[:upper:]' '[:lower:]')
+               [ "$(module_exists "$nlow")" -eq 0 ] && { echo "Module '$3' not found"; exit 1; }
+               set_module "$nlow" "key" "$3"
+               set_module "$nlow" "format" "$4"
+               echo "Easy-set complete: $3 -> $4" ;;
+        reset)
+          if [ "${3:-}" = "all" ]; then
+            for m in title separator os host kernel uptime packages shell de wm cpu memory swap gpu disk locale break colors; do
+              [ "$(module_exists "$m")" -gt 0 ] && reset_module "$m"
+            done; echo "All modules reset to default"
+          else echo "Usage: fastfetch-config module reset all"; fi ;;
+        show|get) [ -z "${3:-}" ] && { echo "Usage: fastfetch-config module show <name>"; exit 1; }
+                  show_module "$3" ;;
+        toggle)  [ -z "${3:-}" ] && { echo "Usage: fastfetch-config module toggle <name>"; exit 1; }
+                 toggle_module "$3" ;;
+        *) echo "Unknown subcommand: ${2:-}"; echo "Usage: fastfetch-config module [list|add|remove|toggle|move|set|show|reset]"; exit 1 ;;
+      esac ;;
+    reset)
+      if [ -n "${2:-}" ]; then
+        if [ "$2" = "all" ]; then
           for m in title separator os host kernel uptime packages shell de wm cpu memory swap gpu disk locale break colors; do
             [ "$(module_exists "$m")" -gt 0 ] && reset_module "$m"
           done; echo "All modules reset to default"
-        else echo "Usage: fastfetch-config module reset all"; fi ;;
-      show|get) [ -z "${3:-}" ] && { echo "Usage: fastfetch-config module show <name>"; exit 1; }
-                show_module "$3" ;;
-      toggle)  [ -z "${3:-}" ] && { echo "Usage: fastfetch-config module toggle <name>"; exit 1; }
-               toggle_module "$3" ;;
-      *) echo "Unknown subcommand: ${2:-}"; echo "Usage: fastfetch-config module [list|add|remove|toggle|move|set|show|reset]"; exit 1 ;;
-    esac ;;
-  reset)
-    if [ -n "${2:-}" ]; then reset_module "$2"; else reset_config; fi ;;  
-  backup)
-    case "${2:-}" in
-      list) list_backups ;;
-      "")  backup_config ;;
-      remove|rm) remove_backup "${3:-}" ;;
-      *) backup_config "$2" ;;
-    esac ;;
-  restore)
-    [ -z "${2:-}" ] && { echo "Usage: fastfetch-config restore <name>"; echo "       fastfetch-config restore list"; exit 1; }
-    case "${2:-}" in list) list_backups ;; *) restore_config "$2" ;; esac ;;
-  export|export-config) export_config "${2:-}" ;;
-  import|import-config)
-    [ -z "${2:-}" ] && { echo "Usage: fastfetch-config import <file>"; exit 1; }
-    import_config "$2" ;;
-  config-path|configpath) echo "$CONFIG_FILE" ;;
-  doctor|check) doctor ;;
-  diag|diagnostics) show_diag ;;
-  version|--version)
-    echo "fastfetch-config $VERSION" ;;
-  update)
-    case "${2:-}" in
-      check) self_update check ;;
-      testing|test) self_update "" testing ;;
-      --help|-h|help) echo "Usage: ff update [check] [testing]"; echo "  update              Download and install latest stable"; echo "  update testing      Download and install latest testing build"; echo "  update check        Check for updates without installing"; echo "On a testing build, 'ff update' switches back to the stable build." ;;
-      "") self_update ;;
-      *) echo "Unknown option: ${2:-}"; echo "Usage: ff update [check] [testing]" ;;
-    esac ;;
-  tui|interactive|menu) tui_menu ;;
-  gallery|browse|logos) gallery "${2:-}" ;;
-  help|--help|-h) usage ;;
-  *)
-    auto_logo_mode
-    auto_image
-    check_update_quiet
-    [ "$FF_IS_IMAGE" -eq 1 ] && set -- "$@" --pipe false
-    auto_fit_and_run "$@" ;;
-esac
+        else
+          reset_module "$2"
+        fi
+      else reset_config; fi ;;
+    backup)
+      case "${2:-}" in
+        list) list_backups ;;
+        "")  backup_config ;;
+        remove|rm) remove_backup "${3:-}" ;;
+        *) backup_config "$2" ;;
+      esac ;;
+    restore)
+      [ -z "${2:-}" ] && { echo "Usage: fastfetch-config restore <name>"; echo "       fastfetch-config restore list"; exit 1; }
+      case "${2:-}" in list) list_backups ;; *) restore_config "$2" ;; esac ;;
+    export|export-config) export_config "${2:-}" ;;
+    import|import-config)
+      [ -z "${2:-}" ] && { echo "Usage: fastfetch-config import <file>"; exit 1; }
+      import_config "$2" ;;
+    config-path|configpath) echo "$CONFIG_FILE" ;;
+    doctor|check) doctor ;;
+    diag|diagnostics) show_diag ;;
+    version|--version)
+      echo "fastfetch-config $VERSION" ;;
+    update)
+      case "${2:-}" in
+        check) self_update check ;;
+        testing|test) self_update "" testing ;;
+        --help|-h|help) echo "Usage: ff update [check] [testing]"; echo "  update              Download and install latest stable"; echo "  update testing      Download and install latest testing build"; echo "  update check        Check for updates without installing"; echo "On a testing build, 'ff update' switches back to the stable build." ;;
+        "") self_update ;;
+        *) echo "Unknown option: ${2:-}"; echo "Usage: ff update [check] [testing]" ;;
+      esac ;;
+    tui|interactive|menu) tui_menu ;;
+    gallery|browse|logos) gallery "${2:-}" ;;
+    help|--help|-h) usage ;;
+    *)
+      auto_logo_mode
+      auto_image
+      check_update_quiet
+      [ "$FF_IS_IMAGE" -eq 1 ] && set -- "$@" --pipe false
+      auto_fit_and_run "$@" ;;
+  esac
 }
 main "$@"
 
