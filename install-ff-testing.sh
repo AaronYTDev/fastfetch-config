@@ -1017,6 +1017,45 @@ toggle_module() {
   fi
 }
 
+# ── Module presets ───────────────────────────────────────────
+# Swap the whole module list for a known-good set. "default" is exactly what
+# the installer writes; the others are curated so fastfetch won't choke.
+preset_modules() {
+  case "$1" in
+    default) gen_default_config | jq -c '.modules' ;;
+    minimal)
+      printf '%s' '["title","separator",{"type":"os","keyIcon":"\uf17c"},"host","kernel","uptime","shell","cpu","memory","break","colors"]' ;;
+    full)
+      printf '%s' '[
+        "title","separator",{"type":"os","keyIcon":"\uf17c"},
+        "host","board","bios","chassis","kernel","bootmgr","version","uptime",
+        "packages","shell","terminal","termfont","font","cursor",
+        "de","wm","theme","icons",
+        "cpu","gpu","vulkan","opengl","opencl","memory","swap",
+        {"type":"disk","folders":"/"},"physicaldisk",
+        "localip","wifi","bluetooth","battery","power","camera","sound","player",
+        "loadavg","processes","users","datetime","locale","weather",
+        "break","colors"
+      ]' ;;
+    *) return 1 ;;
+  esac
+}
+
+apply_preset() {
+  local name="${1:-}" mods count
+  case "$name" in
+    default|minimal|full) ;;
+    "") echo "Usage: fastfetch-config preset <default|minimal|full>"; return 1 ;;
+    *) echo "Unknown preset: $name"; echo "Presets: default, minimal, full"; return 1 ;;
+  esac
+  mods=$(preset_modules "$name")
+  [ -n "$mods" ] || { echo "Couldn't build the '$name' preset"; return 1; }
+  count=$(printf '%s' "$mods" | jq 'length')
+  backup_config "pre-preset-$name-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+  jq_apply --argjson m "$mods" '.modules = $m'
+  echo "Applied '$name' preset ($count modules, backup saved)"
+}
+
 show_diag() {
   local r=""; r="$r$(command -v jq &>/dev/null && echo "jq: $(jq --version 2>/dev/null || echo '?')" || echo "jq: NOT FOUND")"
   r="$r\nfastfetch: $(fastfetch --version 2>/dev/null || echo 'NOT FOUND')"
@@ -1391,6 +1430,119 @@ LOGO
   ok "Custom logos installed in $LOGOS_DIR"
 }
 
+# ── Shell completions ────────────────────────────────────────
+print_completions() {
+  local shell="${1:-}"
+  case "$shell" in
+    bash)
+      cat <<'EOF'
+# ff completions for bash. Load it with:
+#   eval "$(ff completions bash)"
+# or source it from your bashrc.
+_ff_complete() {
+  local cur prev
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  prev="${COMP_WORDS[COMP_CWORD-1]}"
+  case "$prev" in
+    logo)      COMPREPLY=( $(compgen -W "fit preview install random width height size auto" -- "$cur") ); return ;;
+    color)     COMPREPLY=( $(compgen -W "list names search reset" -- "$cur") ); return ;;
+    chafa)     COMPREPLY=( $(compgen -W "on off raw fit size" -- "$cur") ); return ;;
+    kitty)     COMPREPLY=( $(compgen -W "on direct off size" -- "$cur") ); return ;;
+    image)     COMPREPLY=( $(compgen -W "on raw off" -- "$cur") ); return ;;
+    module|var|variable) COMPREPLY=( $(compgen -W "list add remove move set eset reset show toggle" -- "$cur") ); return ;;
+    preset)    COMPREPLY=( $(compgen -W "default minimal full" -- "$cur") ); return ;;
+    completions|completion) COMPREPLY=( $(compgen -W "bash zsh fish" -- "$cur") ); return ;;
+    update)    COMPREPLY=( $(compgen -W "check testing" -- "$cur") ); return ;;
+  esac
+  COMPREPLY=( $(compgen -W "logo os osname osname-logo list-logos color chafa kitty image status stats info clean diff search module reset backup restore export import config-path doctor diag version update tui gallery help preset completions" -- "$cur") )
+}
+complete -F _ff_complete ff
+complete -F _ff_complete fastfetch-config
+EOF
+      ;;
+    zsh)
+      cat <<'EOF'
+#compdef ff fastfetch-config
+# ff completions for zsh. Save it on your $fpath as _ff, e.g.:
+#   ff completions zsh > "${fpath[1]}/_ff"
+_ff() {
+  local -a cmds
+  cmds=(logo os osname osname-logo list-logos color chafa kitty image status stats info clean diff search module reset backup restore export import config-path doctor diag version update tui gallery help preset completions)
+  if (( CURRENT == 2 )); then
+    _describe 'command' cmds
+    return
+  fi
+  case "${words[2]}" in
+    logo)      _values 'logo' fit preview install random width height size auto ;;
+    color)     _values 'color' list names search reset ;;
+    chafa)     _values 'chafa' on off raw fit size ;;
+    kitty)     _values 'kitty' on direct off size ;;
+    image)     _values 'image' on raw off ;;
+    module|var|variable) _values 'module' list add remove move set eset reset show toggle ;;
+    preset)    _values 'preset' default minimal full ;;
+    completions|completion) _values 'shell' bash zsh fish ;;
+    update)    _values 'update' check testing ;;
+  esac
+}
+compdef _ff ff fastfetch-config
+EOF
+      ;;
+    fish)
+      cat <<'EOF'
+# ff completions for fish. Load it with:
+#   ff completions fish | source
+# or save it to ~/.config/fish/completions/ff.fish
+complete -c ff -f
+complete -c ff -n '__fish_use_subcommand' -a logo -d 'Set the logo'
+complete -c ff -n '__fish_use_subcommand' -a os -d 'Set the OS name'
+complete -c ff -n '__fish_use_subcommand' -a osname -d 'Set the OS name'
+complete -c ff -n '__fish_use_subcommand' -a list-logos -d 'List built-in logos'
+complete -c ff -n '__fish_use_subcommand' -a color -d 'Logo colors'
+complete -c ff -n '__fish_use_subcommand' -a chafa -d 'chafa image mode'
+complete -c ff -n '__fish_use_subcommand' -a kitty -d 'Kitty image mode'
+complete -c ff -n '__fish_use_subcommand' -a image -d 'Image rendering'
+complete -c ff -n '__fish_use_subcommand' -a status -d 'Show current settings'
+complete -c ff -n '__fish_use_subcommand' -a stats -d 'Quick system info'
+complete -c ff -n '__fish_use_subcommand' -a clean -d 'Remove old backups'
+complete -c ff -n '__fish_use_subcommand' -a diff -d 'Diff against a backup'
+complete -c ff -n '__fish_use_subcommand' -a search -d 'Search modules and colors'
+complete -c ff -n '__fish_use_subcommand' -a module -d 'Manage modules'
+complete -c ff -n '__fish_use_subcommand' -a reset -d 'Reset config or module'
+complete -c ff -n '__fish_use_subcommand' -a backup -d 'Back up the config'
+complete -c ff -n '__fish_use_subcommand' -a restore -d 'Restore a backup'
+complete -c ff -n '__fish_use_subcommand' -a export -d 'Export the config'
+complete -c ff -n '__fish_use_subcommand' -a import -d 'Import a config'
+complete -c ff -n '__fish_use_subcommand' -a config-path -d 'Print the config path'
+complete -c ff -n '__fish_use_subcommand' -a doctor -d 'Check the setup'
+complete -c ff -n '__fish_use_subcommand' -a diag -d 'Show diagnostics'
+complete -c ff -n '__fish_use_subcommand' -a version -d 'Show the version'
+complete -c ff -n '__fish_use_subcommand' -a update -d 'Check for updates'
+complete -c ff -n '__fish_use_subcommand' -a tui -d 'Open the menu'
+complete -c ff -n '__fish_use_subcommand' -a gallery -d 'Browse built-in logos'
+complete -c ff -n '__fish_use_subcommand' -a help -d 'Show help'
+complete -c ff -n '__fish_use_subcommand' -a preset -d 'Apply a module preset'
+complete -c ff -n '__fish_use_subcommand' -a completions -d 'Print shell completions'
+complete -c ff -n '__fish_seen_subcommand_from logo' -a 'fit preview install random width height size auto'
+complete -c ff -n '__fish_seen_subcommand_from color' -a 'list names search reset'
+complete -c ff -n '__fish_seen_subcommand_from chafa' -a 'on off raw fit size'
+complete -c ff -n '__fish_seen_subcommand_from kitty' -a 'on direct off size'
+complete -c ff -n '__fish_seen_subcommand_from image' -a 'on raw off'
+complete -c ff -n '__fish_seen_subcommand_from module' -a 'list add remove move set eset reset show toggle'
+complete -c ff -n '__fish_seen_subcommand_from preset' -a 'default minimal full'
+complete -c ff -n '__fish_seen_subcommand_from completions' -a 'bash zsh fish'
+complete -c ff -n '__fish_seen_subcommand_from update' -a 'check testing'
+complete -c fastfetch-config -w ff
+EOF
+      ;;
+    *)
+      echo "Usage: fastfetch-config completions <bash|zsh|fish>"
+      echo "  bash  Print a bash completion script (eval it or source it)"
+      echo "  zsh   Print a zsh completion script (save as _ff on your fpath)"
+      echo "  fish  Print fish completions (source it or save to completions/)"
+      return 1 ;;
+  esac
+}
+
 # ── Usage ────────────────────────────────────────────────────
 usage() {
   cat <<EOF
@@ -1407,7 +1559,7 @@ Configuration:
   diff [backup]         Diff current config against a backup
 
 Logo:
-  logo [name|fit]       Show/set logo, "fit" to resize, "auto" for detection
+  logo [name|fit|random] Show/set logo, "fit" to resize, "random" to roll one, "auto" for detection
   logo install          Install bundled ASCII art logos
   logo preview          Show logo details
   logo size <w>x<h>     Set exact image size in cells (e.g. 40x16; "size auto" resets)
@@ -1430,13 +1582,14 @@ OS:
   osname-logo <n> [l]   Set OS name and logo (one arg sets both)
 
 Modules:
-  module|variable       List all modules
+  module|variable|var   List all modules
   module add <name>     Add a module (inserted at default pos)
   module remove <name>  Remove a module from the config
   module move <name> <pos> Move a module to position (1-based)
   module set <n> <k> <v> Set a property on a module
   module eset <n> <f>   Set key+format in one go ("Kernel" "MyOS")
   module reset all      Reset all modules to defaults
+  preset <name>         Swap the module list: default, minimal, or full
 
 Other:
   backup [name]         Save a backup of current config
@@ -1449,6 +1602,7 @@ Other:
   version               Show version
   gallery|browse        Browse and preview built-in logos
   tui|interactive|menu  Open interactive TUI menu
+  completions <shell>   Print bash, zsh, or fish completions
   help                  Show this help
 
 Modules: host, kernel, uptime, packages, shell, de, wm, cpu, memory,
@@ -1472,6 +1626,9 @@ Examples:
   fastfetch-config module reset all
   fastfetch-config module list
   fastfetch-config doctor
+  fastfetch-config logo random
+  fastfetch-config preset minimal
+  fastfetch-config completions bash
   ff                    Run fastfetch directly
   ff stats              Quick system stats
   ff search <term>      Search config
@@ -1705,6 +1862,28 @@ tui_menu() {
   done
 }
 
+# ── Built-in logos ────────────────────────────────────────────
+# fastfetch prints them like:   1)  "Arch Linux" "Arch"
+list_builtin_logos() {
+  local line name
+  while IFS= read -r line; do
+    name=$(printf '%s\n' "$line" | sed -n 's/^[[:space:]]*[0-9]*)[[:space:]]*"\([^"]*\)".*/\1/p')
+    [ -n "$name" ] && printf '%s\n' "$name"
+  done < <(fastfetch --list-logos 2>&1)
+}
+
+# Grab a random built-in logo. Good for when you can't pick.
+set_random_logo() {
+  local -a logos=()
+  local name pick
+  while IFS= read -r name; do logos+=("$name"); done < <(list_builtin_logos)
+  [ "${#logos[@]}" -eq 0 ] && { echo "fastfetch wouldn't give me a logo list. Is it installed?"; return 1; }
+  pick=$(( RANDOM % ${#logos[@]} ))
+  name="${logos[$pick]}"
+  echo "Picked: $name"
+  set_logo "$name"
+}
+
 # ── Logos Gallery ─────────────────────────────────────────────
 _gpad() {
   local vis="$1" stripped
@@ -1716,12 +1895,11 @@ _gpad() {
 }
 gallery() {
   local logos=() page=1 per_page=15 total=0 filter="" orig=()
-  local line="" name="" start=0 end=0 choice="" confirm="" idx=0
+  local name="" start=0 end=0 choice="" confirm="" idx=0
 
-  while IFS= read -r line; do
-    name=$(echo "$line" | sed -n 's/^[[:space:]]*[0-9]*)[[:space:]]*"\([^"]*\)".*/\1/p')
-    [ -n "$name" ] && logos+=("$name")
-  done < <(fastfetch --list-logos 2>&1)
+  while IFS= read -r name; do
+    logos+=("$name")
+  done < <(list_builtin_logos)
   [ ${#logos[@]} -eq 0 ] && { echo "No logos found."; return; }
 
   orig=("${logos[@]}")
@@ -1840,7 +2018,7 @@ main() {
         height)   logo_height "${3:-}" ;;
         size)     set_logo_size "${3:-}" "${4:-}" ;;
         install) install_custom_logos ;;
-        random|rand) echo "Use 'ff os random' for random OS names instead." ;;
+        random|rand) set_random_logo ;;
         "")  echo "Current logo: $(get_logo)" ;;
         *)   set_logo "$2" "${3:-}" ;;
       esac ;;
@@ -2001,6 +2179,8 @@ main() {
       esac ;;
     tui|interactive|menu) tui_menu ;;
     gallery|browse|logos) gallery "${2:-}" ;;
+    preset) apply_preset "${2:-}" ;;
+    completions|completion) print_completions "${2:-}" ;;
     help|--help|-h) usage ;;
     *)
       auto_logo_mode
@@ -2175,6 +2355,9 @@ echo -e "    ff                      Run fastfetch with your config"
 echo -e "    ff chafa [on|off|raw|fit]   Toggle chafa image rendering"
 echo -e "    ff kitty [on|direct]    Toggle native Kitty image rendering"
 echo -e "    ff logo size 40x16     Set exact image size (kitty/chafa)"
+echo -e "    ff logo random         Roll a random built-in logo"
+echo -e "    ff preset minimal      Swap the module list (default/minimal/full)"
+echo -e "    ff completions bash    Print shell completions (bash/zsh/fish)"
 echo -e "    ff update               Update to latest stable"
 echo -e "    ff update testing       Update to latest testing build"
 echo -e "    ff update check         Check for updates"
