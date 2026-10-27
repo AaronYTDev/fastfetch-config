@@ -18,7 +18,7 @@ Point it at a logo (built-in or your own image), set the OS name, mess with colo
 
 ## Support (or lack of it)
 
-Works best on Arch Linux and Arch-based distros (CachyOS, EndeavourOS, and friends), but should work anywhere bash, jq, and fastfetch do. On NixOS you need to install the dependencies yourself. (Can confirm, I, aaronYTDev, use NixOS.) There's experimental macOS support that might be rough around the edges.
+Works best on Arch Linux and Arch-based distros (CachyOS, EndeavourOS, and friends), but should work anywhere bash, jq, and fastfetch do. On NixOS you need to install the dependencies yourself. (Can confirm, as I, aaronYTDev, used to use NixOS.) There's experimental macOS support that might be rough around the edges.
 
 ## Requirements
 
